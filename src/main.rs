@@ -41,13 +41,13 @@ fn main() {
         .cmd("help", "Print help information")
         .cmd("list", "Print a list of supported languages")
         .cmd("version", "Print version information")
-        .opt("-e", "Parse the specified extension (example: js rs)")
+        .opt("-e", "Parse the specified extension (example: js rs). If not used it will parse all languages.")
         .opt("-i", "Ignored file (rust regex)")
-        .opt("-o", "Output format (optional: ascii, html, markdown)")
-        .opt("-p", "Set working directory")
+        .opt("-o", "Output format (optional: ascii, html, markdown). Default is ascii.")
+        .opt("-p", "Set working directory. Default is current path.")
         .opt(
             "-s",
-            "Sort by (optional: language, code, comment, blank, file, size)",
+            "Sort by (optional: language, code, comment, blank, file, size). Default is language.",
         );
 
     if let Some(cmd) = app.command() {
