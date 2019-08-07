@@ -63,6 +63,7 @@ pub fn new() -> Config {
     );
     language!("Python", vec!["py"], regex!(r#"#"#), None);
     language!("Perl", vec!["pl", "pm"], None, None);
+    language!("R", vec!["r"], regex!(r#"#"#), None);
     language!(
         "Rust",
         vec!["rs"],
