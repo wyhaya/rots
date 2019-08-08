@@ -15,7 +15,7 @@
 | JavaScript             238         240          79          22     935.95 KB |
 | JavaScript JSX       26570        2011        4096         299     766.10 KB |
 | JSON                    81           0           3           4       1.97 KB |
-| MarkDown                31           0          13           1      882.00 B |
+| Markdown                31           0          13           1      882.00 B |
 | TypeScript              57           6          12           3       3.78 KB |
 | TypeScript JSX         691          78          46          10      19.12 KB |
 | YML                      4           0           0           1       58.00 B |
@@ -28,7 +28,7 @@
 
 * Quickly calculate data
 * Support multiple languages
-* Support multiple outputs, ASCII, HTML, MarkDown
+* Support multiple outputs, ASCII, HTML, Markdown
 
 ## Install
 

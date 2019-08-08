@@ -1,10 +1,10 @@
-use crate::Result;
+use crate::Detail;
 
 #[derive(Debug)]
 pub enum Output {
     ASCII,
     HTML,
-    MarkDown,
+    Markdown,
 }
 
 macro_rules! total {
@@ -19,7 +19,7 @@ macro_rules! total {
     };
 }
 
-struct Total<'a>(&'a Vec<Result>);
+struct Total<'a>(&'a Vec<Detail>);
 
 impl<'a> Total<'a> {
     total!(code, i32);
@@ -39,7 +39,7 @@ fn bytes_to_size(bytes: f64) -> String {
     format!("{:.2} {}", bytes / k.powi(i), sizes[i as usize])
 }
 
-pub struct Print(pub Vec<Result>);
+pub struct Print(pub Vec<Detail>);
 
 impl Print {
     pub fn ascii(&self) {

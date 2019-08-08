@@ -41,14 +41,11 @@ fn main() {
         .cmd("help", "Print help information")
         .cmd("list", "Print a list of supported languages")
         .cmd("version", "Print version information")
-        .opt("-e", "Parse the specified extension (example: js rs). If not used it will parse all languages.")
-        .opt("-i", "Ignored file (rust regex)")
-        .opt("-o", "Output format (optional: ascii, html, markdown). Default is ascii.")
-        .opt("-p", "Set working directory. Default is current path.")
-        .opt(
-            "-s",
-            "Sort by (optional: language, code, comment, blank, file, size). Default is language.",
-        );
+        .opt("-e", "Parse the specified extension")
+        .opt("-i", "Ignore files using 'Rust regex'")
+        .opt("-o", "Set output format")
+        .opt("-p", "Set working directory")
+        .opt("-s", "Set sort by");
 
     if let Some(cmd) = app.command() {
         match cmd.as_str() {
@@ -68,10 +65,22 @@ fn main() {
         return;
     }
 
-    let e = app.value("-e").unwrap_or(vec![]);
-
-    let i = match app.value("-i") {
+    let extension = match app.value("-e") {
         Some(values) => {
+            if values.len() == 0 {
+                exit!("-e value: [extension] [extension] ..");
+            }
+            values
+        }
+        None => vec![],
+    };
+
+    let ignore = match app.value("-i") {
+        Some(values) => {
+            if values.len() == 0 {
+                exit!("-i value: [regex] [regex] ..");
+            }
+
             let val = values
                 .iter()
                 .map(|val| format!("({})", &val))
@@ -86,7 +95,7 @@ fn main() {
         None => None,
     };
 
-    let p = match app.value("-p") {
+    let path = match app.value("-p") {
         Some(p) => match p.len() {
             0 => PathBuf::from("."),
             _ => PathBuf::from(p[0]),
@@ -94,36 +103,42 @@ fn main() {
         None => PathBuf::from("."),
     };
 
-    let o = match app.value("-o") {
+    let output_err = || -> ! {
+        exit!("-o value: ascii | html | markdown");
+    };
+    let output = match app.value("-o") {
         Some(values) => {
             if values.len() == 0 {
-                Output::ASCII
-            } else {
-                match values[0].to_lowercase().as_str() {
-                    "ascii" => Output::ASCII,
-                    "html" => Output::HTML,
-                    "markdown" => Output::MarkDown,
-                    _ => exit!("-o value: `ascii` `html` `markdown`"),
-                }
+                output_err();
+            }
+
+            match values[0].to_lowercase().as_str() {
+                "ascii" => Output::ASCII,
+                "html" => Output::HTML,
+                "markdown" => Output::Markdown,
+                _ => output_err(),
             }
         }
         None => Output::ASCII,
     };
 
-    let s = match app.value("-s") {
+    let sort_err = || -> ! {
+        exit!("-s value: language | code | comment | blank | file | size");
+    };
+    let sort = match app.value("-s") {
         Some(values) => {
             if values.len() == 0 {
-                Sort::Language
-            } else {
-                match values[0].to_lowercase().as_str() {
-                    "language" => Sort::Language,
-                    "code" => Sort::Code,
-                    "comment" => Sort::Comment,
-                    "blank" => Sort::Blank,
-                    "file" => Sort::File,
-                    "size" => Sort::Size,
-                    _ => exit!("-s value: `language`, `code` `comment` `blank` `file` `size`"),
-                }
+                sort_err();
+            }
+
+            match values[0].to_lowercase().as_str() {
+                "language" => Sort::Language,
+                "code" => Sort::Code,
+                "comment" => Sort::Comment,
+                "blank" => Sort::Blank,
+                "file" => Sort::File,
+                "size" => Sort::Size,
+                _ => sort_err(),
             }
         }
         None => Sort::Language,
@@ -139,7 +154,7 @@ fn main() {
     }
 
     // todo
-    tree(p, &e, &i, &work);
+    tree(path, &extension, &ignore, &work);
 
     for _ in 0..threads.len() {
         work.push(Work::Quit);
@@ -151,7 +166,7 @@ fn main() {
         for d in t.join().unwrap() {
             let find = result
                 .iter()
-                .position(|item: &Result| item.language == d.language);
+                .position(|item: &Detail| item.language == d.language);
 
             if let Some(i) = find {
                 result[i].comment += d.comment;
@@ -160,7 +175,7 @@ fn main() {
                 result[i].size += d.size;
                 result[i].file += 1;
             } else {
-                result.push(Result {
+                result.push(Detail {
                     language: d.language,
                     comment: d.comment,
                     blank: d.blank,
@@ -172,19 +187,19 @@ fn main() {
         }
     }
 
-    let data = match s {
-        Sort::Code => sort(result, |a, b| a.code > b.code),
-        Sort::Comment => sort(result, |a, b| a.comment > b.comment),
-        Sort::Blank => sort(result, |a, b| a.blank > b.blank),
-        Sort::File => sort(result, |a, b| a.file > b.file),
-        Sort::Size => sort(result, |a, b| a.size > b.size),
-        _ => sort(result, |a, b| position(a.language) > position(b.language)),
+    let data = match sort {
+        Sort::Code => bubble_sort(result, |a, b| a.code > b.code),
+        Sort::Comment => bubble_sort(result, |a, b| a.comment > b.comment),
+        Sort::Blank => bubble_sort(result, |a, b| a.blank > b.blank),
+        Sort::File => bubble_sort(result, |a, b| a.file > b.file),
+        Sort::Size => bubble_sort(result, |a, b| a.size > b.size),
+        _ => bubble_sort(result, |a, b| position(a.language) > position(b.language)),
     };
 
-    match o {
+    match output {
         Output::ASCII => Print(data).ascii(),
         Output::HTML => Print(data).html(),
-        Output::MarkDown => Print(data).markdown(),
+        Output::Markdown => Print(data).markdown(),
     };
 }
 
@@ -209,7 +224,7 @@ fn print_support_list() {
     }
 }
 
-fn sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
+fn bubble_sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
     for x in 0..vec.len() {
         for y in x..vec.len() {
             if call(&vec[x], &vec[y]) {
@@ -296,7 +311,7 @@ fn tree(dir: PathBuf, ext: &Vec<&String>, ignore: &Option<Regex>, work: &Worker<
 }
 
 #[derive(Debug, Clone)]
-pub struct Result {
+pub struct Detail {
     language: &'static str,
     blank: i32,
     comment: i32,
@@ -361,11 +376,7 @@ struct Parse {
 
 // todo
 impl Parse {
-    fn new(
-        path: PathBuf,
-        size: u64,
-        config: &Language,
-    ) -> std::result::Result<Parse, (ErrorKind, PathBuf)> {
+    fn new(path: PathBuf, size: u64, config: &Language) -> Result<Parse, (ErrorKind, PathBuf)> {
         let content = match fs::read_to_string(&path) {
             Ok(data) => data,
             Err(err) => return Err((err.kind(), path)),
