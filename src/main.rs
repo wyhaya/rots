@@ -28,12 +28,10 @@ macro_rules! warn {
     };
 }
 
-static mut BLANK_REGEX: Option<Regex> = None;
 static mut CONFIG: Option<Config> = None;
 
 fn main() {
     unsafe {
-        BLANK_REGEX = Some(Regex::new(r#"^\s*$"#).unwrap());
         CONFIG = Some(config::new());
     }
 
@@ -97,7 +95,7 @@ fn main() {
 
     let path = match app.value("-p") {
         Some(p) => match p.len() {
-            0 => PathBuf::from("."),
+            0 => exit!("-p value: [directory]"),
             _ => PathBuf::from(p[0]),
         },
         None => PathBuf::from("."),
@@ -374,7 +372,6 @@ struct Parse {
     size: u64,
 }
 
-// todo
 impl Parse {
     fn new(path: PathBuf, size: u64, config: &Language) -> Result<Parse, (ErrorKind, PathBuf)> {
         let content = match fs::read_to_string(&path) {
@@ -385,33 +382,47 @@ impl Parse {
         let mut blank = 0;
         let mut comment = 0;
         let mut code = 0;
-        let mut is_comment = false;
+        let mut in_comment = None;
 
-        for line in content.split("\n") {
-            if unsafe { BLANK_REGEX.as_ref() }.unwrap().is_match(&line) {
+        'line: for line in content.lines() {
+            let line = line.trim();
+
+            // Matching blank line
+            if line.is_empty() {
                 blank += 1;
-                continue;
+                continue 'line;
             }
 
-            if let Some((before, after)) = &config.multi {
-                if before.is_match(line) {
-                    is_comment = true;
+            // Match multiple lines of comments
+            for (start, end) in &config.multi {
+                if let Some(d) = in_comment {
+                    if d != (start, end) {
+                        continue;
+                    }
                 }
-                if after.is_match(line) {
-                    is_comment = false;
-                    comment += 1;
-                    continue;
+                // Multi-line comments may also end in a single line
+                if line.starts_with(start) {
+                    in_comment = match in_comment {
+                        Some(_) => None,
+                        None => Some((start, end)),
+                    };
                 }
-                if is_comment {
+                if line.ends_with(end) {
+                    in_comment = None;
                     comment += 1;
-                    continue;
+                    continue 'line;
+                }
+                if let Some(_) = in_comment {
+                    comment += 1;
+                    continue 'line;
                 }
             }
 
-            if let Some(single) = &config.single {
-                if single.is_match(line) {
+            //  Match single line comments
+            for single in &config.single {
+                if line.starts_with(single) {
                     comment += 1;
-                    continue;
+                    continue 'line;
                 }
             }
 

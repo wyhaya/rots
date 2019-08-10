@@ -60,6 +60,9 @@ lok -i node_modules dist
 
 # Use regular expressions
 lok -i 'node_\w+|dist'
+
+# Ignore all files with the extension js jsx ts tsx
+lok -i 'jsx?$' 'tsx?$'
 ```
 
 ```bash
@@ -89,10 +92,10 @@ Example:
 
 ```rust
 language!(
-    "JavaScript",
-    vec!["js"],
-    regex!(r#"^\s*//"#),
-    regex!(r#"/\*"#, r#"\*/"#)
+    "Rust", 
+    vec!["rs"], 
+    vec!["//", "///"], 
+    vec![("/*", "*/")]
 );
 // ...
 ```
