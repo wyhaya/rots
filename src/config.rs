@@ -85,7 +85,6 @@ pub fn new() -> Config {
     );
     language!("SQL", vec!["sql"], vec!["--"], vec![("/*", "*/")]);
     language!("TypeScript", vec!["ts"], vec!["//"], vec![("/*", "*/")]);
-    // todo
     language!(
         "TypeScript JSX",
         vec!["tsx"],

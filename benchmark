@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo "Create release version..."
+cargo build --release
+
+echo "Start benchmarking..."
+
+hyperfine --warmup 3 './target/release/lok' 'tokei'
+

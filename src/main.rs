@@ -42,25 +42,28 @@ fn main() {
         .opt("-e", "Parse the specified extension")
         .opt("-i", "Ignore files using 'Rust regex'")
         .opt("-o", "Set output format")
-        .opt("-p", "Set working directory")
         .opt("-s", "Set sort by");
+
+    let mut path = PathBuf::from(".");
 
     if let Some(cmd) = app.command() {
         match cmd.as_str() {
             "help" => {
                 app.help();
+                return;
             }
             "list" => {
                 print_support_list();
+                return;
             }
             "version" => {
                 app.version();
+                return;
             }
             _ => {
-                app.error_try("help");
+                path = PathBuf::from(cmd);
             }
         }
-        return;
     }
 
     let extension = match app.value("-e") {
@@ -91,14 +94,6 @@ fn main() {
             }
         }
         None => None,
-    };
-
-    let path = match app.value("-p") {
-        Some(p) => match p.len() {
-            0 => exit!("-p value: [directory]"),
-            _ => PathBuf::from(p[0]),
-        },
-        None => PathBuf::from("."),
     };
 
     let output_err = || -> ! {

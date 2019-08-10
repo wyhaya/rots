@@ -47,6 +47,9 @@ Go to your project in the terminal and type lok on the command line
 ```bash
 cd your-project
 lok
+
+# Change working directory
+lok /root/code
 ```
 
 ```bash
@@ -61,7 +64,7 @@ lok -i node_modules dist
 # Use regular expressions
 lok -i 'node_\w+|dist'
 
-# Ignore all files with the extension js jsx ts tsx
+# Ignore all files with the extension: js jsx ts tsx
 lok -i 'jsx?$' 'tsx?$'
 ```
 
@@ -72,11 +75,6 @@ lok -o markdown
 # Save to file
 lok -o html > code.html
 lok -o markdown > code.md
-```
-
-```bash
-# Change working directory
-lok -p /root/code
 ```
       
 ```bash
@@ -98,6 +96,20 @@ language!(
     vec![("/*", "*/")]
 );
 // ...
+```
+
+## Benchmark
+
+First need to install
+
+```bash
+cargo install hyperfine tokei
+```
+
+Run
+
+```bash
+./benchmark
 ```
 
 ## License
