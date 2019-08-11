@@ -395,20 +395,36 @@ impl Parse {
                         continue;
                     }
                 }
+
                 // Multi-line comments may also end in a single line
+                let mut same_line = false;
+
                 if line.starts_with(start) {
                     in_comment = match in_comment {
-                        Some(_) => None,
-                        None => Some((start, end)),
+                        Some(_) => {
+                            comment += 1;
+                            in_comment = None;
+                            continue 'line;
+                        }
+                        None => {
+                            same_line = true;
+                            Some((start, end))
+                        }
                     };
                 }
-                if line.ends_with(end) {
-                    in_comment = None;
-                    comment += 1;
-                    continue 'line;
-                }
+
+                // This line is in the comment
                 if let Some(_) = in_comment {
                     comment += 1;
+                    if line.ends_with(end) {
+                        if same_line {
+                            if line.len() >= (start.len() + end.len()) {
+                                in_comment = None;
+                            }
+                        } else {
+                            in_comment = None;
+                        }
+                    }
                     continue 'line;
                 }
             }
