@@ -3,7 +3,20 @@
 echo "Create release version..."
 cargo build --release
 
+echo "Download code repository..."
+test -w temp || mkdir temp
+cd ./temp
+
+test -r rust || git clone https://github.com/rust-lang/rust.git --depth 1
+# test -r TypeScript || git clone https://github.com/microsoft/TypeScript.git --depth 1
+# test -r swift || git clone https://github.com/apple/swift.git --depth 1
+# test -r Nim || git clone https://github.com/nim-lang/Nim.git --depth 1
+# test -r go || git clone https://github.com/golang/go.git --depth 1
+# test -r node || git clone https://github.com/nodejs/node.git --depth 1
+
+rm -f ./*/.gitignore
+
 echo "Start benchmarking..."
 
-hyperfine --warmup 3 './target/release/lok' 'tokei'
+hyperfine --warmup 3 '../target/release/lok' 'loc' 'tokei'
 

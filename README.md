@@ -103,7 +103,7 @@ language!(
 First need to install
 
 ```bash
-cargo install hyperfine tokei
+cargo install hyperfine loc tokei
 ```
 
 Run
