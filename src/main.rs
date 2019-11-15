@@ -187,12 +187,11 @@ fn main() {
 fn print_support_list() {
     let config = unsafe { CONFIG.as_ref() }.unwrap();
 
-    let mut max = 0;
-    for item in &config.data {
-        if item.name.len() > max {
-            max = item.name.len();
-        }
-    }
+    let n = config
+        .data
+        .iter()
+        .map(|item| item.name.len())
+        .fold(0, |a, b| a.max(b));
 
     for item in &config.data {
         let ext = item
@@ -201,7 +200,7 @@ fn print_support_list() {
             .map(|e| format!(".{}", e))
             .collect::<Vec<String>>()
             .join(" ");
-        println!("{:name$}    {}", item.name, ext, name = max);
+        println!("{:name$}    {}", item.name, ext, name = n);
     }
 }
 
