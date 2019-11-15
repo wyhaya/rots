@@ -2,6 +2,7 @@ mod config;
 mod output;
 
 use ace::App;
+use bright::Colorful;
 use config::{Config, Language};
 use crossbeam_deque::{Stealer, Worker};
 use output::{Output, Print};
@@ -14,7 +15,7 @@ use std::thread;
 macro_rules! exit {
     ($($arg:tt)*) => {
        {
-            eprint!("\x1b[91m{}: \x1b[0m", "error");
+            eprint!("{} ", "error:".red().bold());
             eprintln!($($arg)*);
             std::process::exit(1)
        }
@@ -23,8 +24,15 @@ macro_rules! exit {
 
 macro_rules! warn {
     ($kind: expr, $path: expr) => {
-        eprint!("\x1b[93m{}: \x1b[0m", "error");
-        eprintln!("{:?} {:?}", $kind, $path);
+        eprintln!("{} {:?} {:?}", "error:".yellow(), $kind, $path);
+    };
+}
+
+macro_rules! empty {
+    ($arr: expr, $exec: expr) => {
+        if $arr.is_empty() {
+            $exec
+        }
     };
 }
 
@@ -48,39 +56,27 @@ fn main() {
 
     if let Some(cmd) = app.command() {
         match cmd.as_str() {
-            "help" => {
-                app.help();
-                return;
-            }
-            "list" => {
-                print_support_list();
-                return;
-            }
-            "version" => {
-                app.version();
-                return;
-            }
+            "help" => return app.help(),
+            "list" => return print_support_list(),
+            "version" => return app.version(),
             _ => {
                 path = PathBuf::from(cmd);
             }
         }
     }
 
-    let extension = match app.value("-e") {
-        Some(values) => {
-            if values.len() == 0 {
-                exit!("-e value: [extension] [extension] ..");
-            }
+    let extension = app
+        .value("-e")
+        .map(|values| {
+            empty!(values, exit!("-e value: [extension] [extension] .."));
             values
-        }
-        None => vec![],
-    };
+        })
+        .unwrap_or_default();
 
-    let ignore = match app.value("-i") {
-        Some(values) => {
-            if values.len() == 0 {
-                exit!("-i value: [regex] [regex] ..");
-            }
+    let ignore = app
+        .value("-i")
+        .map(|values| {
+            empty!(values, exit!("-i value: [regex] [regex] .."));
 
             let val = values
                 .iter()
@@ -92,37 +88,29 @@ fn main() {
                 Ok(reg) => Some(reg),
                 Err(err) => exit!("{:?}", err),
             }
-        }
-        None => None,
-    };
+        })
+        .unwrap_or_default();
 
-    let output_err = || -> ! {
-        exit!("-o value: ascii | html | markdown");
-    };
-    let output = match app.value("-o") {
-        Some(values) => {
-            if values.len() == 0 {
-                output_err();
-            }
+    const OUTPUT_ERR: &str = "-o value: ascii | html | markdown";
+    let output = app
+        .value("-o")
+        .map(|values| {
+            empty!(values, exit!("{}", OUTPUT_ERR));
 
             match values[0].to_lowercase().as_str() {
                 "ascii" => Output::ASCII,
                 "html" => Output::HTML,
                 "markdown" => Output::Markdown,
-                _ => output_err(),
+                _ => exit!("{}", OUTPUT_ERR),
             }
-        }
-        None => Output::ASCII,
-    };
+        })
+        .unwrap_or_default();
 
-    let sort_err = || -> ! {
-        exit!("-s value: language | code | comment | blank | file | size");
-    };
-    let sort = match app.value("-s") {
-        Some(values) => {
-            if values.len() == 0 {
-                sort_err();
-            }
+    const SORT_ERR: &str = "-s value: language | code | comment | blank | file | size";
+    let sort = app
+        .value("-s")
+        .map(|values| {
+            empty!(values, exit!("{}", SORT_ERR));
 
             match values[0].to_lowercase().as_str() {
                 "language" => Sort::Language,
@@ -131,17 +119,17 @@ fn main() {
                 "blank" => Sort::Blank,
                 "file" => Sort::File,
                 "size" => Sort::Size,
-                _ => sort_err(),
+                _ => exit!("{}", SORT_ERR),
             }
-        }
-        None => Sort::Language,
-    };
+        })
+        .unwrap_or_default();
 
     let work = Worker::new_fifo();
     let stealer = work.stealer();
-    let mut threads = vec![];
+    let cpus = num_cpus::get();
+    let mut threads = Vec::with_capacity(cpus);
 
-    for _ in 0..num_cpus::get() {
+    for _ in 0..cpus {
         let fifo = Queue(stealer.clone());
         threads.push(thread::spawn(|| fifo.run()));
     }
@@ -181,12 +169,12 @@ fn main() {
     }
 
     let data = match sort {
+        Sort::Language => bubble_sort(result, |a, b| position(a.language) > position(b.language)),
         Sort::Code => bubble_sort(result, |a, b| a.code > b.code),
         Sort::Comment => bubble_sort(result, |a, b| a.comment > b.comment),
         Sort::Blank => bubble_sort(result, |a, b| a.blank > b.blank),
         Sort::File => bubble_sort(result, |a, b| a.file > b.file),
         Sort::Size => bubble_sort(result, |a, b| a.size > b.size),
-        _ => bubble_sort(result, |a, b| position(a.language) > position(b.language)),
     };
 
     match output {
@@ -228,25 +216,21 @@ fn bubble_sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
     vec
 }
 
-const LETTER: &'static str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const LETTER: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 fn position(s: &str) -> usize {
     if let Some(c) = s.chars().next() {
         let index = LETTER.chars().position(|d| d == c);
-        return match index {
-            Some(i) => i,
-            None => 0,
-        };
+        if let Some(i) = index {
+            return i;
+        }
     }
     0
 }
 
-fn tree(dir: PathBuf, ext: &Vec<&String>, ignore: &Option<Regex>, work: &Worker<Work>) {
+fn tree(dir: PathBuf, ext: &[&String], ignore: &Option<Regex>, work: &Worker<Work>) {
     let read_dir = match fs::read_dir(&dir) {
         Ok(dir) => dir,
-        Err(err) => {
-            warn!(err.kind(), &dir);
-            return;
-        }
+        Err(err) => return warn!(err.kind(), &dir),
     };
 
     for file in read_dir {
@@ -291,10 +275,8 @@ fn tree(dir: PathBuf, ext: &Vec<&String>, ignore: &Option<Regex>, work: &Worker<
             None => continue,
         };
 
-        if ext.len() != 0 {
-            if !ext.iter().any(|item| item == &extension) {
-                continue;
-            }
+        if !ext.is_empty() && !ext.iter().any(|item| item == &extension) {
+            continue;
         }
 
         if let Some(config) = unsafe { CONFIG.as_ref() }.unwrap().get(extension) {
@@ -323,6 +305,12 @@ enum Sort {
     Size,
 }
 
+impl Default for Sort {
+    fn default() -> Self {
+        Sort::Language
+    }
+}
+
 enum Work<'a> {
     File(PathBuf, u64, &'a Language),
     Quit,
@@ -336,9 +324,7 @@ impl<'a> Queue<'a> {
         loop {
             let work = match self.0.steal().success() {
                 Some(work) => work,
-                None => {
-                    continue;
-                }
+                None => continue,
             };
             match work {
                 Work::File(path, size, config) => {
@@ -349,9 +335,7 @@ impl<'a> Queue<'a> {
                         }
                     };
                 }
-                Work::Quit => {
-                    break;
-                }
+                Work::Quit => break,
             }
         }
         vec
@@ -414,7 +398,7 @@ impl Parse {
                 }
 
                 // This line is in the comment
-                if let Some(_) = in_comment {
+                if in_comment.is_some() {
                     comment += 1;
                     if line.ends_with(end) {
                         if same_line {

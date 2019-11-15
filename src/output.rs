@@ -7,6 +7,12 @@ pub enum Output {
     Markdown,
 }
 
+impl Default for Output {
+    fn default() -> Self {
+        Output::ASCII
+    }
+}
+
 macro_rules! total {
     ($name: ident, $type: path) => {
         fn $name(&self) -> $type {
@@ -114,7 +120,7 @@ impl Print {
         println!(
             "    <tfoot>
         <tr>
-            <td>{}</td>
+            <td>Total</td>
             <td>{}</td>
             <td>{}</td>
             <td>{}</td>
@@ -122,7 +128,6 @@ impl Print {
             <td>{}</td>
         </tr>
     </tfoot>",
-            "Total",
             total.code(),
             total.comment(),
             total.blank(),
