@@ -54,18 +54,20 @@ lok /root/code
 
 ```bash
 # If you want to calculate some languages
-lok -e ts js
+lok -ext ts js
 ```
 
 ```bash
 # If you want to ignore files
-lok -i node_modules dist
-
-# Use regular expressions
-lok -i 'node_\w+|dist'
+lok -e main.rs
 
 # Ignore all files with the extension: js jsx ts tsx
-lok -i 'jsx?$' 'tsx?$'
+lok -e 'jsx?$' 'tsx?$'
+```
+
+```bash
+# Including the specified files
+lok -i '^main.\w+$'
 ```
 
 ```bash

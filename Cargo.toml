@@ -1,6 +1,6 @@
 [package]
 name = "lok"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2018"
 
 authors = ["wyhaya <wyhaya@gmail.com>"]
@@ -23,3 +23,4 @@ bright = "0.2.0"
 crossbeam-deque = "0.7.1"
 num_cpus = "1.10.1"
 regex = "1.2.1"
+walkdir = "2.2.9"

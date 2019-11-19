@@ -11,6 +11,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::thread;
+use walkdir::WalkDir;
 
 macro_rules! exit {
     ($($arg:tt)*) => {
@@ -39,16 +40,13 @@ macro_rules! empty {
 static mut CONFIG: Option<Config> = None;
 
 fn main() {
-    unsafe {
-        CONFIG = Some(config::new());
-    }
-
     let app = App::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
         .cmd("help", "Print help information")
-        .cmd("list", "Print a list of supported languages")
+        .cmd("ls", "Print a list of supported languages")
         .cmd("version", "Print version information")
-        .opt("-e", "Parse the specified extension")
-        .opt("-i", "Ignore files using 'Rust regex'")
+        .opt("-ext", "Parse the specified extension")
+        .opt("-e", "Exclude `Rust regex` specified files")
+        .opt("-i", "Include `Rust regex` specified files")
         .opt("-o", "Set output format")
         .opt("-s", "Set sort by");
 
@@ -57,7 +55,7 @@ fn main() {
     if let Some(cmd) = app.command() {
         match cmd.as_str() {
             "help" => return app.help(),
-            "list" => return print_support_list(),
+            "ls" => return print_language_list(),
             "version" => return app.version(),
             _ => {
                 path = PathBuf::from(cmd);
@@ -66,51 +64,49 @@ fn main() {
     }
 
     let extension = app
-        .value("-e")
+        .value("-ext")
         .map(|values| {
-            empty!(values, exit!("-e value: [extension] [extension] .."));
+            empty!(values, exit!("-ext value: [extension] [extension] .."));
             values
         })
         .unwrap_or_default();
 
-    let ignore = app
-        .value("-i")
+    let exclude = app
+        .value("-e")
         .map(|values| {
-            empty!(values, exit!("-i value: [regex] [regex] .."));
-
-            let val = values
-                .iter()
-                .map(|val| format!("({})", &val))
-                .collect::<Vec<String>>()
-                .join("|");
-
-            match Regex::new(&val) {
-                Ok(reg) => Some(reg),
-                Err(err) => exit!("{:?}", err),
-            }
+            empty!(values, exit!("-e value: [regex] [regex] .."));
+            Some(vec_to_regex(values))
         })
         .unwrap_or_default();
 
-    const OUTPUT_ERR: &str = "-o value: ascii | html | markdown";
+    let include = app
+        .value("-i")
+        .map(|values| {
+            empty!(values, exit!("-i value: [regex] [regex] .."));
+            Some(vec_to_regex(values))
+        })
+        .unwrap_or_default();
+
     let output = app
         .value("-o")
         .map(|values| {
-            empty!(values, exit!("{}", OUTPUT_ERR));
-
+            empty!(values, exit!("-o value: ascii | html | markdown"));
             match values[0].to_lowercase().as_str() {
                 "ascii" => Output::ASCII,
                 "html" => Output::HTML,
                 "markdown" => Output::Markdown,
-                _ => exit!("{}", OUTPUT_ERR),
+                _ => exit!("-o value: ascii | html | markdown"),
             }
         })
         .unwrap_or_default();
 
-    const SORT_ERR: &str = "-s value: language | code | comment | blank | file | size";
     let sort = app
         .value("-s")
         .map(|values| {
-            empty!(values, exit!("{}", SORT_ERR));
+            empty!(
+                values,
+                exit!("-s value: language | code | comment | blank | file | size")
+            );
 
             match values[0].to_lowercase().as_str() {
                 "language" => Sort::Language,
@@ -119,11 +115,14 @@ fn main() {
                 "blank" => Sort::Blank,
                 "file" => Sort::File,
                 "size" => Sort::Size,
-                _ => exit!("{}", SORT_ERR),
+                _ => exit!("-s value: language | code | comment | blank | file | size"),
             }
         })
         .unwrap_or_default();
 
+    unsafe {
+        CONFIG = Some(config::new());
+    }
     let work = Worker::new_fifo();
     let stealer = work.stealer();
     let cpus = num_cpus::get();
@@ -134,8 +133,67 @@ fn main() {
         threads.push(thread::spawn(|| fifo.run()));
     }
 
-    // todo
-    tree(path, &extension, &ignore, &work);
+    let tree = WalkDir::new(path).into_iter().filter_map(|item| {
+        let entry = match item {
+            Ok(entry) => entry,
+            Err(error) => {
+                if let (Some(err), Some(path)) = (error.io_error(), error.path()) {
+                    warn!(err.kind(), path);
+                }
+                return None;
+            }
+        };
+
+        let path = entry.path();
+
+        if exclude.is_some() || include.is_some() {
+            let filename = match path.file_name() {
+                Some(s) => match s.to_str() {
+                    Some(name) => name,
+                    None => return None,
+                },
+                None => return None,
+            };
+
+            // exclude files
+            if let Some(exclude) = &exclude {
+                if exclude.is_match(filename) {
+                    return None;
+                }
+            }
+
+            // include files
+            if let Some(include) = &include {
+                if !include.is_match(filename) {
+                    return None;
+                }
+            }
+        }
+
+        // File with the specified extension
+        let ext = match path.extension() {
+            Some(s) => match s.to_str() {
+                Some(ext) => ext,
+                None => return None,
+            },
+            None => return None,
+        };
+
+        if !extension.is_empty() && !extension.iter().any(|item| item == &ext) {
+            return None;
+        }
+
+        if let Some(config) = unsafe { CONFIG.as_ref() }.unwrap().get(ext) {
+            if let Ok(meta) = path.metadata() {
+                return Some((entry.path().to_path_buf(), meta.len(), config));
+            }
+        }
+        None
+    });
+
+    for (path, len, config) in tree {
+        work.push(Work::File(path, len, config));
+    }
 
     for _ in 0..threads.len() {
         work.push(Work::Quit);
@@ -184,16 +242,15 @@ fn main() {
     };
 }
 
-fn print_support_list() {
-    let config = unsafe { CONFIG.as_ref() }.unwrap();
+fn print_language_list() {
+    let data = config::new().data;
 
-    let n = config
-        .data
+    let n = data
         .iter()
         .map(|item| item.name.len())
         .fold(0, |a, b| a.max(b));
 
-    for item in &config.data {
+    for item in &data {
         let ext = item
             .extension
             .iter()
@@ -201,6 +258,19 @@ fn print_support_list() {
             .collect::<Vec<String>>()
             .join(" ");
         println!("{:name$}    {}", item.name, ext, name = n);
+    }
+}
+
+fn vec_to_regex(values: Vec<&String>) -> Regex {
+    let val = values
+        .iter()
+        .map(|val| format!("({})", &val))
+        .collect::<Vec<String>>()
+        .join("|");
+
+    match Regex::new(&val) {
+        Ok(reg) => reg,
+        Err(err) => exit!("{:?}", err),
     }
 }
 
@@ -224,64 +294,6 @@ fn position(s: &str) -> usize {
         }
     }
     0
-}
-
-fn tree(dir: PathBuf, ext: &[&String], ignore: &Option<Regex>, work: &Worker<Work>) {
-    let read_dir = match fs::read_dir(&dir) {
-        Ok(dir) => dir,
-        Err(err) => return warn!(err.kind(), &dir),
-    };
-
-    for file in read_dir {
-        let file = match file {
-            Ok(file) => file,
-            Err(err) => {
-                warn!(err.kind(), &dir);
-                continue;
-            }
-        };
-
-        let meta = match file.metadata() {
-            Ok(meta) => meta,
-            Err(err) => {
-                warn!(err.kind(), &dir);
-                continue;
-            }
-        };
-
-        if let Some(ignore) = ignore {
-            match file.file_name().to_str() {
-                Some(name) => {
-                    if ignore.is_match(name) {
-                        continue;
-                    }
-                }
-                None => continue,
-            };
-        }
-        let path = file.path();
-
-        if meta.is_dir() {
-            tree(path, &ext, &ignore, &work);
-            continue;
-        }
-
-        let extension = match path.extension() {
-            Some(d) => match d.to_str() {
-                Some(d) => d,
-                None => continue,
-            },
-            None => continue,
-        };
-
-        if !ext.is_empty() && !ext.iter().any(|item| item == &extension) {
-            continue;
-        }
-
-        if let Some(config) = unsafe { CONFIG.as_ref() }.unwrap().get(extension) {
-            work.push(Work::File(path, meta.len(), config));
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
