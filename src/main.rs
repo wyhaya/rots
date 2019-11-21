@@ -25,7 +25,7 @@ macro_rules! exit {
     };
 }
 
-macro_rules! warn {
+macro_rules! err {
     ($kind: expr, $path: expr) => {
         eprintln!("{} {:?} {:?}", "error:".yellow(), $kind, $path);
     };
@@ -125,13 +125,12 @@ fn main() {
         .unwrap_or_default();
 
     let work = Worker::new_fifo();
-    let stealer = work.stealer();
     let cpus = num_cpus::get();
     let mut threads = Vec::with_capacity(cpus);
 
     for _ in 0..cpus {
-        let fifo = Queue(stealer.clone());
-        threads.push(thread::spawn(|| fifo.run()));
+        let fifo = Queue(work.stealer().clone());
+        threads.push(thread::spawn(|| fifo.new()));
     }
 
     let tree = WalkDir::new(path).into_iter().filter_map(|item| {
@@ -139,7 +138,7 @@ fn main() {
             Ok(entry) => entry,
             Err(error) => {
                 if let (Some(err), Some(path)) = (error.io_error(), error.path()) {
-                    warn!(err.kind(), path);
+                    err!(err.kind(), path);
                 }
                 return None;
             }
@@ -180,20 +179,19 @@ fn main() {
             None => return None,
         };
 
+        // This extension is not included in config
         if !extension.is_empty() && !extension.iter().any(|item| item == &ext) {
             return None;
         }
 
         if let Some(config) = CONFIG.get(ext) {
-            if let Ok(meta) = path.metadata() {
-                return Some((entry.path().to_path_buf(), meta.len(), config));
-            }
+            return Some((entry.path().to_path_buf(), config));
         }
         None
     });
 
-    for (path, len, config) in tree {
-        work.push(Work::File(path, len, config));
+    for (path, config) in tree {
+        work.push(Work::Parse(path, config));
     }
 
     for _ in 0..cpus {
@@ -201,10 +199,18 @@ fn main() {
     }
 
     // Merge data
-    let mut result = vec![];
+    let mut result = Vec::new();
 
-    for t in threads {
-        for d in t.join().unwrap() {
+    for thread in threads {
+        let data = match thread.join() {
+            Ok(data) => data,
+            Err(err) => {
+                err!("Thread exits abnormally", err);
+                continue;
+            }
+        };
+
+        for d in data {
             let find = result
                 .iter()
                 .position(|item: &Detail| item.language == d.language);
@@ -325,37 +331,47 @@ impl Default for Sort {
 }
 
 enum Work<'a> {
-    File(PathBuf, u64, &'a Language),
+    Parse(PathBuf, &'a Language),
     Quit,
 }
 
 struct Queue<'a>(Stealer<Work<'a>>);
 
 impl<'a> Queue<'a> {
-    fn run(self) -> Vec<Parse> {
-        let mut vec = vec![];
+    fn new(self) -> Vec<Parse> {
+        let mut result = Vec::new();
+
         loop {
+            // Receive message
             let work = match self.0.steal().success() {
                 Some(work) => work,
                 None => continue,
             };
+
             match work {
-                Work::File(path, size, config) => {
-                    match Parse::new(path, size, &config) {
-                        Ok(d) => vec.push(d),
-                        Err((kind, p)) => {
-                            warn!(kind, p);
-                        }
+                Work::Parse(path, config) => {
+                    match Parse::new(path, &config) {
+                        ParseResult::Ok(p) => result.push(p),
+                        ParseResult::Err(kind, p) => err!(kind, p),
+                        ParseResult::Invalid => continue,
                     };
                 }
                 Work::Quit => break,
             }
         }
-        vec
+
+        result
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+enum ParseResult {
+    Ok(Parse),
+    Err(ErrorKind, PathBuf),
+    Invalid,
+}
+
+#[derive(Debug)]
 struct Parse {
     language: &'static str,
     blank: i32,
@@ -365,10 +381,20 @@ struct Parse {
 }
 
 impl Parse {
-    fn new(path: PathBuf, size: u64, config: &Language) -> Result<Parse, (ErrorKind, PathBuf)> {
+    fn new(path: PathBuf, config: &Language) -> ParseResult {
+        let size = match path.metadata() {
+            Ok(meta) => {
+                if !meta.is_file() {
+                    return ParseResult::Invalid;
+                }
+                meta.len()
+            }
+            Err(err) => return ParseResult::Err(err.kind(), path),
+        };
+
         let content = match fs::read_to_string(&path) {
             Ok(data) => data,
-            Err(err) => return Err((err.kind(), path)),
+            Err(err) => return ParseResult::Err(err.kind(), path),
         };
 
         let mut blank = 0;
@@ -437,7 +463,7 @@ impl Parse {
             code += 1;
         }
 
-        Ok(Parse {
+        ParseResult::Ok(Parse {
             language: config.name,
             blank,
             comment,
