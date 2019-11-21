@@ -1,17 +1,19 @@
+#[macro_use]
+extern crate lazy_static;
+
 mod config;
 mod output;
 
-use ace::App;
-use bright::Colorful;
-use config::{Config, Language};
-use crossbeam_deque::{Stealer, Worker};
-use output::{Output, Print};
-use regex::Regex;
-use std::fs;
-use std::io::ErrorKind;
-use std::path::PathBuf;
-use std::thread;
-use walkdir::WalkDir;
+use {
+    ace::App,
+    bright::Colorful,
+    config::{Config, Language},
+    crossbeam_deque::{Stealer, Worker},
+    output::{Output, Print},
+    regex::Regex,
+    std::{fs, io::ErrorKind, path::PathBuf, thread},
+    walkdir::WalkDir,
+};
 
 macro_rules! exit {
     ($($arg:tt)*) => {
@@ -37,7 +39,9 @@ macro_rules! empty {
     };
 }
 
-static mut CONFIG: Option<Config> = None;
+lazy_static! {
+    static ref CONFIG: Config = config::new();
+}
 
 fn main() {
     let app = App::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
@@ -120,9 +124,6 @@ fn main() {
         })
         .unwrap_or_default();
 
-    unsafe {
-        CONFIG = Some(config::new());
-    }
     let work = Worker::new_fifo();
     let stealer = work.stealer();
     let cpus = num_cpus::get();
@@ -183,7 +184,7 @@ fn main() {
             return None;
         }
 
-        if let Some(config) = unsafe { CONFIG.as_ref() }.unwrap().get(ext) {
+        if let Some(config) = CONFIG.get(ext) {
             if let Ok(meta) = path.metadata() {
                 return Some((entry.path().to_path_buf(), meta.len(), config));
             }
@@ -195,10 +196,11 @@ fn main() {
         work.push(Work::File(path, len, config));
     }
 
-    for _ in 0..threads.len() {
+    for _ in 0..cpus {
         work.push(Work::Quit);
     }
 
+    // Merge data
     let mut result = vec![];
 
     for t in threads {
@@ -243,14 +245,14 @@ fn main() {
 }
 
 fn print_language_list() {
-    let data = config::new().data;
+    let data: &Vec<Language> = &CONFIG.data;
 
     let n = data
         .iter()
         .map(|item| item.name.len())
         .fold(0, |a, b| a.max(b));
 
-    for item in &data {
+    for item in data {
         let ext = item
             .extension
             .iter()
