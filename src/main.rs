@@ -130,7 +130,7 @@ fn main() {
 
     for _ in 0..cpus {
         let fifo = Queue(work.stealer().clone());
-        threads.push(thread::spawn(|| fifo.new()));
+        threads.push(thread::spawn(|| fifo.start()));
     }
 
     let tree = WalkDir::new(path).into_iter().filter_map(|item| {
@@ -338,7 +338,7 @@ enum Work<'a> {
 struct Queue<'a>(Stealer<Work<'a>>);
 
 impl<'a> Queue<'a> {
-    fn new(self) -> Vec<Parse> {
+    fn start(self) -> Vec<Parse> {
         let mut result = Vec::new();
 
         loop {
@@ -350,7 +350,7 @@ impl<'a> Queue<'a> {
 
             match work {
                 Work::Parse(path, config) => {
-                    match Parse::new(path, &config) {
+                    match parser(path, &config) {
                         ParseResult::Ok(p) => result.push(p),
                         ParseResult::Err(kind, p) => err!(kind, p),
                         ParseResult::Invalid => continue,
@@ -380,95 +380,93 @@ struct Parse {
     size: u64,
 }
 
-impl Parse {
-    fn new(path: PathBuf, config: &Language) -> ParseResult {
-        let size = match path.metadata() {
-            Ok(meta) => {
-                if !meta.is_file() {
-                    return ParseResult::Invalid;
-                }
-                meta.len()
+fn parser(path: PathBuf, config: &Language) -> ParseResult {
+    let size = match path.metadata() {
+        Ok(meta) => {
+            if !meta.is_file() {
+                return ParseResult::Invalid;
             }
-            Err(err) => return ParseResult::Err(err.kind(), path),
-        };
+            meta.len()
+        }
+        Err(err) => return ParseResult::Err(err.kind(), path),
+    };
 
-        let content = match fs::read_to_string(&path) {
-            Ok(data) => data,
-            Err(err) => return ParseResult::Err(err.kind(), path),
-        };
+    let content = match fs::read_to_string(&path) {
+        Ok(data) => data,
+        Err(err) => return ParseResult::Err(err.kind(), path),
+    };
 
-        let mut blank = 0;
-        let mut comment = 0;
-        let mut code = 0;
-        let mut in_comment = None;
+    let mut blank = 0;
+    let mut comment = 0;
+    let mut code = 0;
+    let mut in_comment = None;
 
-        'line: for line in content.lines() {
-            let line = line.trim();
+    'line: for line in content.lines() {
+        let line = line.trim();
 
-            // Matching blank line
-            if line.is_empty() {
-                blank += 1;
-                continue 'line;
-            }
-
-            // Match multiple lines of comments
-            for (start, end) in &config.multi {
-                if let Some(d) = in_comment {
-                    if d != (start, end) {
-                        continue;
-                    }
-                }
-
-                // Multi-line comments may also end in a single line
-                let mut same_line = false;
-
-                if line.starts_with(start) {
-                    in_comment = match in_comment {
-                        Some(_) => {
-                            comment += 1;
-                            in_comment = None;
-                            continue 'line;
-                        }
-                        None => {
-                            same_line = true;
-                            Some((start, end))
-                        }
-                    };
-                }
-
-                // This line is in the comment
-                if in_comment.is_some() {
-                    comment += 1;
-                    if line.ends_with(end) {
-                        if same_line {
-                            if line.len() >= (start.len() + end.len()) {
-                                in_comment = None;
-                            }
-                        } else {
-                            in_comment = None;
-                        }
-                    }
-                    continue 'line;
-                }
-            }
-
-            //  Match single line comments
-            for single in &config.single {
-                if line.starts_with(single) {
-                    comment += 1;
-                    continue 'line;
-                }
-            }
-
-            code += 1;
+        // Matching blank line
+        if line.is_empty() {
+            blank += 1;
+            continue 'line;
         }
 
-        ParseResult::Ok(Parse {
-            language: config.name,
-            blank,
-            comment,
-            code,
-            size,
-        })
+        // Match multiple lines of comments
+        for (start, end) in &config.multi {
+            if let Some(d) = in_comment {
+                if d != (start, end) {
+                    continue;
+                }
+            }
+
+            // Multi-line comments may also end in a single line
+            let mut same_line = false;
+
+            if line.starts_with(start) {
+                in_comment = match in_comment {
+                    Some(_) => {
+                        comment += 1;
+                        in_comment = None;
+                        continue 'line;
+                    }
+                    None => {
+                        same_line = true;
+                        Some((start, end))
+                    }
+                };
+            }
+
+            // This line is in the comment
+            if in_comment.is_some() {
+                comment += 1;
+                if line.ends_with(end) {
+                    if same_line {
+                        if line.len() >= (start.len() + end.len()) {
+                            in_comment = None;
+                        }
+                    } else {
+                        in_comment = None;
+                    }
+                }
+                continue 'line;
+            }
+        }
+
+        //  Match single line comments
+        for single in &config.single {
+            if line.starts_with(single) {
+                comment += 1;
+                continue 'line;
+            }
+        }
+
+        code += 1;
     }
+
+    ParseResult::Ok(Parse {
+        language: config.name,
+        blank,
+        comment,
+        code,
+        size,
+    })
 }

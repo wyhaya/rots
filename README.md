@@ -2,8 +2,9 @@
 
 # lok
 
-[![Build Status](https://img.shields.io/travis/wyhaya/lok.svg?style=flat-square)](https://travis-ci.org/wyhaya/lok)
-[![Crates.io](https://img.shields.io/crates/l/lok.svg?style=flat-square)](https://github.com/wyhaya/lok/blob/master/LICENSE)
+[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/wyhaya/lok/Build?style=flat-square)](https://github.com/wyhaya/lok/actions)
+[![Crates.io](https://img.shields.io/crates/v/lok.svg?style=flat-square)](https://crates.io/crates/lok)
+[![LICENSE](https://img.shields.io/crates/l/lok.svg?style=flat-square)](https://github.com/wyhaya/lok/blob/master/LICENSE)
 
 `lok` is a command line tool, that is used to quickly calculate the number of lines of various language codes in a project
 
