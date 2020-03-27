@@ -3,17 +3,18 @@ extern crate lazy_static;
 
 mod config;
 mod output;
+mod parse;
 
-use {
-    ace::App,
-    bright::Colorful,
-    config::{Config, Language},
-    crossbeam_deque::{Stealer, Worker},
-    output::{Output, Print},
-    regex::Regex,
-    std::{fs, io::ErrorKind, path::PathBuf, thread},
-    walkdir::WalkDir,
-};
+use ace::App;
+use bright::Colorful;
+use config::{Config, Language};
+use crossbeam_deque::{Stealer, Worker};
+use glob::Pattern;
+use output::{Format, Output};
+use parse::{parser, Data, Value};
+use std::convert::TryFrom;
+use std::{path::PathBuf, thread};
+use walkdir::WalkDir;
 
 macro_rules! exit {
     ($($arg:tt)*) => {
@@ -31,75 +32,70 @@ macro_rules! err {
     };
 }
 
-macro_rules! empty {
-    ($arr: expr, $exec: expr) => {
-        if $arr.is_empty() {
-            $exec
-        }
-    };
-}
-
 lazy_static! {
     static ref CONFIG: Config = config::new();
 }
 
 fn main() {
-    let app = App::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    let app = App::new()
+        .name(env!("CARGO_PKG_NAME"))
+        .version(env!("CARGO_PKG_VERSION"))
         .cmd("help", "Print help information")
         .cmd("ls", "Print a list of supported languages")
         .cmd("version", "Print version information")
-        .opt("-ext", "Parse the specified extension")
-        .opt("-e", "Exclude `Rust regex` specified files")
-        .opt("-i", "Include `Rust regex` specified files")
+        .opt("-ext", "Parse file with specified extension")
+        .opt("-e", "Exclude files using 'glob' matching")
+        .opt("-i", "Include files using 'glob' matching")
         .opt("-o", "Set output format")
         .opt("-s", "Set sort by");
 
-    let mut path = PathBuf::from(".");
+    // Default working directory
+    let mut work_dir = PathBuf::from(".");
 
     if let Some(cmd) = app.command() {
         match cmd.as_str() {
-            "help" => return app.help(),
+            "help" => return app.print_help(),
             "ls" => return print_language_list(),
-            "version" => return app.version(),
+            "version" => return app.print_version(),
             _ => {
-                path = PathBuf::from(cmd);
+                // Specifying new working directory
+                work_dir = PathBuf::from(cmd);
             }
         }
     }
 
-    let extension = app
-        .value("-ext")
-        .map(|values| {
-            empty!(values, exit!("-ext value: [extension] [extension] .."));
-            values
-        })
-        .unwrap_or_default();
+    let extension = app.value("-ext").map(|values| {
+        if values.is_empty() {
+            exit!("-ext value: [extension] [extension] ..")
+        } else {
+            values.iter().map(|val| val.as_str()).collect::<Vec<&str>>()
+        }
+    });
 
-    let exclude = app
-        .value("-e")
-        .map(|values| {
-            empty!(values, exit!("-e value: [regex] [regex] .."));
-            Some(vec_to_regex(values))
-        })
-        .unwrap_or_default();
+    let exclude = app.value("-e").map(|values| {
+        if values.is_empty() {
+            exit!("-e value: [glob] [glob] ..")
+        } else {
+            force_to_glob(&work_dir, values)
+        }
+    });
 
-    let include = app
-        .value("-i")
-        .map(|values| {
-            empty!(values, exit!("-i value: [regex] [regex] .."));
-            Some(vec_to_regex(values))
-        })
-        .unwrap_or_default();
+    let include = app.value("-i").map(|values| {
+        if values.is_empty() {
+            exit!("-i value: [glob] [glob] ..")
+        } else {
+            force_to_glob(&work_dir, values)
+        }
+    });
 
-    let output = app
+    let format = app
         .value("-o")
         .map(|values| {
-            empty!(values, exit!("-o value: ascii | html | markdown"));
-            match values[0].to_lowercase().as_str() {
-                "ascii" => Output::ASCII,
-                "html" => Output::HTML,
-                "markdown" => Output::Markdown,
-                _ => exit!("-o value: ascii | html | markdown"),
+            if values.is_empty() {
+                exit!("-o value: ascii | html | markdown")
+            } else {
+                Format::try_from(values[0].as_str())
+                    .unwrap_or_else(|_| exit!("-o value: ascii | html | markdown"))
             }
         })
         .unwrap_or_default();
@@ -107,33 +103,29 @@ fn main() {
     let sort = app
         .value("-s")
         .map(|values| {
-            empty!(
-                values,
+            if values.is_empty() {
                 exit!("-s value: language | code | comment | blank | file | size")
-            );
-
-            match values[0].to_lowercase().as_str() {
-                "language" => Sort::Language,
-                "code" => Sort::Code,
-                "comment" => Sort::Comment,
-                "blank" => Sort::Blank,
-                "file" => Sort::File,
-                "size" => Sort::Size,
-                _ => exit!("-s value: language | code | comment | blank | file | size"),
+            } else {
+                Sort::try_from(values[0].as_str()).unwrap_or_else(|_| {
+                    exit!("-s value: language | code | comment | blank | file | size")
+                })
             }
         })
         .unwrap_or_default();
 
-    let work = Worker::new_fifo();
+    // Init
+    let worker = Worker::new_fifo();
     let cpus = num_cpus::get();
     let mut threads = Vec::with_capacity(cpus);
 
+    // Created thread
     for _ in 0..cpus {
-        let fifo = Queue(work.stealer().clone());
+        let fifo = Queue(worker.stealer().clone());
         threads.push(thread::spawn(|| fifo.start()));
     }
 
-    let tree = WalkDir::new(path).into_iter().filter_map(|item| {
+    // Get all files
+    let tree = WalkDir::new(work_dir).into_iter().filter_map(|item| {
         let entry = match item {
             Ok(entry) => entry,
             Err(error) => {
@@ -146,27 +138,20 @@ fn main() {
 
         let path = entry.path();
 
-        if exclude.is_some() || include.is_some() {
-            let filename = match path.file_name() {
-                Some(s) => match s.to_str() {
-                    Some(name) => name,
-                    None => return None,
-                },
-                None => return None,
-            };
-
-            // exclude files
-            if let Some(exclude) = &exclude {
-                if exclude.is_match(filename) {
+        // Exclude files
+        if let Some(exclude) = &exclude {
+            for matcher in exclude {
+                if matcher.matches_path(path) {
                     return None;
                 }
             }
+        }
 
-            // include files
-            if let Some(include) = &include {
-                if !include.is_match(filename) {
-                    return None;
-                }
+        // Include files
+        if let Some(include) = &include {
+            let any = include.iter().any(|m| m.matches_path(path));
+            if !any {
+                return None;
             }
         }
 
@@ -180,56 +165,57 @@ fn main() {
         };
 
         // This extension is not included in config
-        if !extension.is_empty() && !extension.iter().any(|item| item == &ext) {
-            return None;
+        if let Some(extension) = &extension {
+            if !extension.contains(&ext) {
+                return None;
+            }
         }
 
-        if let Some(config) = CONFIG.get(ext) {
-            return Some((entry.path().to_path_buf(), config));
-        }
-        None
+        // Get file path and configuration
+        CONFIG
+            .get(ext)
+            .map(|config| (entry.path().to_path_buf(), config))
     });
 
     for (path, config) in tree {
-        work.push(Work::Parse(path, config));
+        worker.push(Work::Parse(path, config));
     }
 
     for _ in 0..cpus {
-        work.push(Work::Quit);
+        worker.push(Work::Quit);
     }
 
     // Merge data
     let mut result = Vec::new();
 
     for thread in threads {
-        let data = match thread.join() {
-            Ok(data) => data,
-            Err(err) => {
-                err!("Thread exits abnormally", err);
-                continue;
-            }
-        };
+        let data = thread.join().unwrap_or_else(|err| {
+            exit!("Thread exits abnormally\n{:#?}", err);
+        });
 
         for d in data {
-            let find = result
+            let position = result
                 .iter()
                 .position(|item: &Detail| item.language == d.language);
 
-            if let Some(i) = find {
-                result[i].comment += d.comment;
-                result[i].blank += d.blank;
-                result[i].code += d.code;
-                result[i].size += d.size;
-                result[i].file += 1;
-            } else {
-                result.push(Detail {
-                    language: d.language,
-                    comment: d.comment,
-                    blank: d.blank,
-                    code: d.code,
-                    size: d.size,
-                    file: 1,
-                });
+            match position {
+                Some(i) => {
+                    result[i].comment += d.comment;
+                    result[i].blank += d.blank;
+                    result[i].code += d.code;
+                    result[i].size += d.size;
+                    result[i].file += 1;
+                }
+                None => {
+                    result.push(Detail {
+                        language: d.language,
+                        comment: d.comment,
+                        blank: d.blank,
+                        code: d.code,
+                        size: d.size,
+                        file: 1,
+                    });
+                }
             }
         }
     }
@@ -243,11 +229,30 @@ fn main() {
         Sort::Size => bubble_sort(result, |a, b| a.size > b.size),
     };
 
-    match output {
-        Output::ASCII => Print(data).ascii(),
-        Output::HTML => Print(data).html(),
-        Output::Markdown => Print(data).markdown(),
-    };
+    Output::new(data).print(format);
+}
+
+// Translate to the same path
+// ./src src => ./src ./src
+// /src  src => /src   /src
+// src   src => src    src
+fn force_to_glob(path: &PathBuf, values: Vec<&String>) -> Vec<Pattern> {
+    values
+        .iter()
+        .map(|s| {
+            if path.starts_with(".") && !s.starts_with("./") {
+                format!("./{}", s)
+            } else if path.starts_with("/") && !s.starts_with('/') {
+                format!("/{}", s)
+            } else {
+                (*s).to_string()
+            }
+        })
+        .map(|s| {
+            Pattern::new(s.as_str())
+                .unwrap_or_else(|err| exit!("Cannot parse '{}' to glob matcher\n{:#?}", s, err))
+        })
+        .collect::<Vec<Pattern>>()
 }
 
 fn print_language_list() {
@@ -269,19 +274,6 @@ fn print_language_list() {
     }
 }
 
-fn vec_to_regex(values: Vec<&String>) -> Regex {
-    let val = values
-        .iter()
-        .map(|val| format!("({})", &val))
-        .collect::<Vec<String>>()
-        .join("|");
-
-    match Regex::new(&val) {
-        Ok(reg) => reg,
-        Err(err) => exit!("{:?}", err),
-    }
-}
-
 fn bubble_sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
     for x in 0..vec.len() {
         for y in x..vec.len() {
@@ -293,14 +285,16 @@ fn bubble_sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
     vec
 }
 
-const LETTER: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 fn position(s: &str) -> usize {
+    const LETTER: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
     if let Some(c) = s.chars().next() {
         let index = LETTER.chars().position(|d| d == c);
         if let Some(i) = index {
             return i;
         }
     }
+
     0
 }
 
@@ -324,6 +318,22 @@ enum Sort {
     Size,
 }
 
+impl TryFrom<&str> for Sort {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "language" => Ok(Sort::Language),
+            "code" => Ok(Sort::Code),
+            "comment" => Ok(Sort::Comment),
+            "blank" => Ok(Sort::Blank),
+            "file" => Ok(Sort::File),
+            "size" => Ok(Sort::Size),
+            _ => Err(()),
+        }
+    }
+}
+
 impl Default for Sort {
     fn default() -> Self {
         Sort::Language
@@ -338,7 +348,7 @@ enum Work<'a> {
 struct Queue<'a>(Stealer<Work<'a>>);
 
 impl<'a> Queue<'a> {
-    fn start(self) -> Vec<Parse> {
+    fn start(self) -> Vec<Data> {
         let mut result = Vec::new();
 
         loop {
@@ -351,9 +361,9 @@ impl<'a> Queue<'a> {
             match work {
                 Work::Parse(path, config) => {
                     match parser(path, &config) {
-                        ParseResult::Ok(p) => result.push(p),
-                        ParseResult::Err(kind, p) => err!(kind, p),
-                        ParseResult::Invalid => continue,
+                        Value::Ok(data) => result.push(data),
+                        Value::Err(kind, p) => err!(kind, p),
+                        Value::Invalid => continue,
                     };
                 }
                 Work::Quit => break,
@@ -362,111 +372,4 @@ impl<'a> Queue<'a> {
 
         result
     }
-}
-
-#[derive(Debug)]
-enum ParseResult {
-    Ok(Parse),
-    Err(ErrorKind, PathBuf),
-    Invalid,
-}
-
-#[derive(Debug)]
-struct Parse {
-    language: &'static str,
-    blank: i32,
-    comment: i32,
-    code: i32,
-    size: u64,
-}
-
-fn parser(path: PathBuf, config: &Language) -> ParseResult {
-    let size = match path.metadata() {
-        Ok(meta) => {
-            if !meta.is_file() {
-                return ParseResult::Invalid;
-            }
-            meta.len()
-        }
-        Err(err) => return ParseResult::Err(err.kind(), path),
-    };
-
-    let content = match fs::read_to_string(&path) {
-        Ok(data) => data,
-        Err(err) => return ParseResult::Err(err.kind(), path),
-    };
-
-    let mut blank = 0;
-    let mut comment = 0;
-    let mut code = 0;
-    let mut in_comment = None;
-
-    'line: for line in content.lines() {
-        let line = line.trim();
-
-        // Matching blank line
-        if line.is_empty() {
-            blank += 1;
-            continue 'line;
-        }
-
-        // Match multiple lines of comments
-        for (start, end) in &config.multi {
-            if let Some(d) = in_comment {
-                if d != (start, end) {
-                    continue;
-                }
-            }
-
-            // Multi-line comments may also end in a single line
-            let mut same_line = false;
-
-            if line.starts_with(start) {
-                in_comment = match in_comment {
-                    Some(_) => {
-                        comment += 1;
-                        in_comment = None;
-                        continue 'line;
-                    }
-                    None => {
-                        same_line = true;
-                        Some((start, end))
-                    }
-                };
-            }
-
-            // This line is in the comment
-            if in_comment.is_some() {
-                comment += 1;
-                if line.ends_with(end) {
-                    if same_line {
-                        if line.len() >= (start.len() + end.len()) {
-                            in_comment = None;
-                        }
-                    } else {
-                        in_comment = None;
-                    }
-                }
-                continue 'line;
-            }
-        }
-
-        //  Match single line comments
-        for single in &config.single {
-            if line.starts_with(single) {
-                comment += 1;
-                continue 'line;
-            }
-        }
-
-        code += 1;
-    }
-
-    ParseResult::Ok(Parse {
-        language: config.name,
-        blank,
-        comment,
-        code,
-        size,
-    })
 }

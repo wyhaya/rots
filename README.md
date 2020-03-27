@@ -60,15 +60,10 @@ lok -ext ts js
 
 ```bash
 # If you want to ignore files
-lok -e main.rs
+lok -e './node_modules/**'
 
-# Ignore all files with the extension: js jsx ts tsx
-lok -e 'jsx?$' 'tsx?$'
-```
-
-```bash
-# Including the specified files
-lok -i '^main.\w+$'
+# Ignore all files with the specified extension
+lok -e '**/*.ts' '**/*.js'
 ```
 
 ```bash

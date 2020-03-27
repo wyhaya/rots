@@ -1,15 +1,29 @@
 use crate::Detail;
+use std::convert::TryFrom;
 
 #[derive(Debug)]
-pub enum Output {
+pub enum Format {
     ASCII,
     HTML,
     Markdown,
 }
 
-impl Default for Output {
+impl TryFrom<&str> for Format {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "ascii" => Ok(Format::ASCII),
+            "html" => Ok(Format::HTML),
+            "markdown" => Ok(Format::Markdown),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Default for Format {
     fn default() -> Self {
-        Output::ASCII
+        Format::ASCII
     }
 }
 
@@ -35,20 +49,22 @@ impl<'a> Total<'a> {
     total!(size, u64);
 }
 
-fn bytes_to_size(bytes: f64) -> String {
-    let k = 1024_f64;
-    let sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-    if bytes <= 1_f64 {
-        return format!("{:.2} B", bytes);
+pub struct Output(pub Vec<Detail>);
+
+impl Output {
+    pub fn new(data: Vec<Detail>) -> Self {
+        Output(data)
     }
-    let i = (bytes.ln() / k.ln()) as i32;
-    format!("{:.2} {}", bytes / k.powi(i), sizes[i as usize])
-}
 
-pub struct Print(pub Vec<Detail>);
+    pub fn print(self, format: Format) {
+        match format {
+            Format::ASCII => self.ascii(),
+            Format::HTML => self.html(),
+            Format::Markdown => self.markdown(),
+        };
+    }
 
-impl Print {
-    pub fn ascii(&self) {
+    fn ascii(&self) {
         println!("┌{:─<78}┐", "");
         println!(
             "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
@@ -81,7 +97,7 @@ impl Print {
         println!("└{:─<78}┘", "");
     }
 
-    pub fn html(&self) {
+    fn html(&self) {
         println!("<table>");
         println!(
             "   <thead>
@@ -138,7 +154,7 @@ impl Print {
         println!("</table>");
     }
 
-    pub fn markdown(&self) {
+    fn markdown(&self) {
         println!(
             "| {:<14} | {:<12} | {:<12} | {:<12} | {:<12} | {:<14} |",
             "Language", "Code", "Comment", "Blank", "File", "Size"
@@ -169,4 +185,14 @@ impl Print {
             bytes_to_size(total.size() as f64)
         );
     }
+}
+
+fn bytes_to_size(bytes: f64) -> String {
+    const SIZE: f64 = 1024_f64;
+    const UNITS: [&str; 9] = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+    if bytes <= 1_f64 {
+        return format!("{:.2} B", bytes);
+    }
+    let i = (bytes.ln() / SIZE.ln()) as i32;
+    format!("{:.2} {}", bytes / SIZE.powi(i), UNITS[i as usize])
 }
