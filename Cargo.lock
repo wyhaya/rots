@@ -78,7 +78,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "lok"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "ace 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bright 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",

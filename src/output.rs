@@ -88,10 +88,10 @@ impl Output {
         println!(
             "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
             "Total",
-            total.code(),
-            total.comment(),
-            total.blank(),
-            total.file(),
+            format_number(total.code()),
+            format_number(total.comment()),
+            format_number(total.blank()),
+            format_number(total.file()),
             bytes_to_size(total.size() as f64)
         );
         println!("└{:─<78}┘", "");
@@ -144,10 +144,10 @@ impl Output {
             <td>{}</td>
         </tr>
     </tfoot>",
-            total.code(),
-            total.comment(),
-            total.blank(),
-            total.file(),
+            format_number(total.code()),
+            format_number(total.comment()),
+            format_number(total.blank()),
+            format_number(total.file()),
             bytes_to_size(total.size() as f64)
         );
 
@@ -178,10 +178,10 @@ impl Output {
         println!(
             "| {:<14} | {:<12} | {:<12} | {:<12} | {:<12} | {:<14} |",
             "Total",
-            total.code(),
-            total.comment(),
-            total.blank(),
-            total.file(),
+            format_number(total.code()),
+            format_number(total.comment()),
+            format_number(total.blank()),
+            format_number(total.file()),
             bytes_to_size(total.size() as f64)
         );
     }
@@ -195,4 +195,19 @@ fn bytes_to_size(bytes: f64) -> String {
     }
     let i = (bytes.ln() / SIZE.ln()) as i32;
     format!("{:.2} {}", bytes / SIZE.powi(i), UNITS[i as usize])
+}
+
+fn format_number<T: ToString>(num: T) -> String {
+    let text = num.to_string();
+    let mut vec = Vec::new();
+    for (i, ch) in text.chars().rev().into_iter().enumerate() {
+        if i != 0 && i % 3 == 0 {
+            vec.push(',');
+        }
+        vec.push(ch);
+    }
+    vec.reverse();
+    let mut s = String::with_capacity(vec.len());
+    s.extend(&vec);
+    s
 }

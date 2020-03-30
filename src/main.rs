@@ -33,16 +33,16 @@ macro_rules! err {
 }
 
 lazy_static! {
-    static ref CONFIG: Config = config::new();
+    static ref CONFIG: Config = Config::new();
 }
 
 fn main() {
     let app = App::new()
         .name(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
-        .cmd("help", "Print help information")
         .cmd("ls", "Print a list of supported languages")
         .cmd("version", "Print version information")
+        .cmd("help", "Print help information")
         .opt("-ext", "Parse file with specified extension")
         .opt("-e", "Exclude files using 'glob' matching")
         .opt("-i", "Include files using 'glob' matching")
@@ -55,7 +55,7 @@ fn main() {
     if let Some(cmd) = app.command() {
         match cmd.as_str() {
             "help" => return app.print_help(),
-            "ls" => return print_language_list(),
+            "ls" => return print_language_list(&CONFIG.data),
             "version" => return app.print_version(),
             _ => {
                 // Specifying new working directory
@@ -232,6 +232,23 @@ fn main() {
     Output::new(data).print(format);
 }
 
+fn print_language_list(data: &Vec<Language>) {
+    let n = data
+        .iter()
+        .map(|language| language.name.len())
+        .fold(0, |a, b| a.max(b));
+
+    for language in data {
+        let ext = language
+            .extension
+            .iter()
+            .map(|e| format!(".{}", e))
+            .collect::<Vec<String>>()
+            .join(" ");
+        println!("{:name$}    {}", language.name, ext, name = n);
+    }
+}
+
 // Translate to the same path
 // ./src src => ./src ./src
 // /src  src => /src   /src
@@ -255,25 +272,6 @@ fn force_to_glob(path: &PathBuf, values: Vec<&String>) -> Vec<Pattern> {
         .collect::<Vec<Pattern>>()
 }
 
-fn print_language_list() {
-    let data: &Vec<Language> = &CONFIG.data;
-
-    let n = data
-        .iter()
-        .map(|item| item.name.len())
-        .fold(0, |a, b| a.max(b));
-
-    for item in data {
-        let ext = item
-            .extension
-            .iter()
-            .map(|e| format!(".{}", e))
-            .collect::<Vec<String>>()
-            .join(" ");
-        println!("{:name$}    {}", item.name, ext, name = n);
-    }
-}
-
 fn bubble_sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
     for x in 0..vec.len() {
         for y in x..vec.len() {
@@ -287,15 +285,8 @@ fn bubble_sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
 
 fn position(s: &str) -> usize {
     const LETTER: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    if let Some(c) = s.chars().next() {
-        let index = LETTER.chars().position(|d| d == c);
-        if let Some(i) = index {
-            return i;
-        }
-    }
-
-    0
+    let first = s.chars().next().unwrap_or_default();
+    LETTER.chars().position(|d| d == first).unwrap_or(0)
 }
 
 #[derive(Debug, Clone)]
