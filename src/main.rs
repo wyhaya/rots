@@ -232,7 +232,7 @@ fn main() {
     Output::new(data).print(format);
 }
 
-fn print_language_list(data: &Vec<Language>) {
+fn print_language_list(data: &[Language]) {
     let n = data
         .iter()
         .map(|language| language.name.len())

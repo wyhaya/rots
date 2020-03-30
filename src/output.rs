@@ -200,7 +200,7 @@ fn bytes_to_size(bytes: f64) -> String {
 fn format_number<T: ToString>(num: T) -> String {
     let text = num.to_string();
     let mut vec = Vec::new();
-    for (i, ch) in text.chars().rev().into_iter().enumerate() {
+    for (i, ch) in text.chars().rev().enumerate() {
         if i != 0 && i % 3 == 0 {
             vec.push(',');
         }
