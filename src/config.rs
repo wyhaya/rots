@@ -121,6 +121,7 @@ impl Config {
         config
     }
 
+    // Get language configuration by extension
     pub fn get(&self, extension: &str) -> Option<&Language> {
         for item in &self.data {
             for ext in &item.extension {

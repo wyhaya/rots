@@ -92,10 +92,10 @@ fn main() {
         .value("-o")
         .map(|values| {
             if values.is_empty() {
-                exit!("-o value: ascii | html | markdown")
+                exit!("-o value: table | html | markdown")
             } else {
                 Format::try_from(values[0].as_str())
-                    .unwrap_or_else(|_| exit!("-o value: ascii | html | markdown"))
+                    .unwrap_or_else(|_| exit!("-o value: table | html | markdown"))
             }
         })
         .unwrap_or_default();
@@ -125,7 +125,7 @@ fn main() {
     }
 
     // Get all files
-    let tree = WalkDir::new(work_dir).into_iter().filter_map(|item| {
+    let files = WalkDir::new(work_dir).into_iter().filter_map(|item| {
         let entry = match item {
             Ok(entry) => entry,
             Err(error) => {
@@ -177,7 +177,7 @@ fn main() {
             .map(|config| (entry.path().to_path_buf(), config))
     });
 
-    for (path, config) in tree {
+    for (path, config) in files {
         worker.push(Work::Parse(path, config));
     }
 

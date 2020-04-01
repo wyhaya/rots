@@ -67,16 +67,16 @@ lok -e '**/*.ts' '**/*.js'
 ```
 
 ```bash
-# If you want to output other formats: ascii, html, markdown
+# If you want to output other formats: table, html, markdown
 lok -o markdown
 
 # Save to file
 lok -o html > code.html
 lok -o markdown > code.md
 ```
-      
+
 ```bash
-# Sort by: code, comment, blank, file, size
+# Sort by: language, code, comment, blank, file, size
 lok -s code
 ```    
 

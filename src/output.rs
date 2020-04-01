@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 
 #[derive(Debug)]
 pub enum Format {
-    ASCII,
+    Table,
     HTML,
     Markdown,
 }
@@ -13,7 +13,7 @@ impl TryFrom<&str> for Format {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.to_lowercase().as_str() {
-            "ascii" => Ok(Format::ASCII),
+            "table" => Ok(Format::Table),
             "html" => Ok(Format::HTML),
             "markdown" => Ok(Format::Markdown),
             _ => Err(()),
@@ -23,7 +23,7 @@ impl TryFrom<&str> for Format {
 
 impl Default for Format {
     fn default() -> Self {
-        Format::ASCII
+        Format::Table
     }
 }
 
@@ -58,13 +58,13 @@ impl Output {
 
     pub fn print(self, format: Format) {
         match format {
-            Format::ASCII => self.ascii(),
+            Format::Table => self.table(),
             Format::HTML => self.html(),
             Format::Markdown => self.markdown(),
         };
     }
 
-    fn ascii(&self) {
+    fn table(&self) {
         println!("┌{:─<78}┐", "");
         println!(
             "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
@@ -80,7 +80,7 @@ impl Output {
                 item.comment,
                 item.blank,
                 item.file,
-                bytes_to_size(item.size as f64)
+                bytes_to_size(item.size)
             );
         }
         println!("├{:─<78}┤", "");
@@ -92,7 +92,7 @@ impl Output {
             format_number(total.comment()),
             format_number(total.blank()),
             format_number(total.file()),
-            bytes_to_size(total.size() as f64)
+            bytes_to_size(total.size())
         );
         println!("└{:─<78}┘", "");
     }
@@ -128,7 +128,7 @@ impl Output {
                 item.comment,
                 item.blank,
                 item.file,
-                bytes_to_size(item.size as f64)
+                bytes_to_size(item.size)
             );
         }
         println!("    </tbody>");
@@ -148,7 +148,7 @@ impl Output {
             format_number(total.comment()),
             format_number(total.blank()),
             format_number(total.file()),
-            bytes_to_size(total.size() as f64)
+            bytes_to_size(total.size())
         );
 
         println!("</table>");
@@ -171,7 +171,7 @@ impl Output {
                 item.comment,
                 item.blank,
                 item.file,
-                bytes_to_size(item.size as f64)
+                bytes_to_size(item.size)
             );
         }
         let total = Total(&self.0);
@@ -182,19 +182,19 @@ impl Output {
             format_number(total.comment()),
             format_number(total.blank()),
             format_number(total.file()),
-            bytes_to_size(total.size() as f64)
+            bytes_to_size(total.size())
         );
     }
 }
 
-fn bytes_to_size(bytes: f64) -> String {
-    const SIZE: f64 = 1024_f64;
-    const UNITS: [&str; 9] = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-    if bytes <= 1_f64 {
-        return format!("{:.2} B", bytes);
+fn bytes_to_size(bytes: u64) -> String {
+    const UNITS: [&str; 7] = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
+    if bytes < 1024 {
+        return format!("{}.00 B", bytes);
     }
-    let i = (bytes.ln() / SIZE.ln()) as i32;
-    format!("{:.2} {}", bytes / SIZE.powi(i), UNITS[i as usize])
+    let bytes = bytes as f64;
+    let i = (bytes.ln() / 1024_f64.ln()) as i32;
+    format!("{:.2} {}", bytes / 1024_f64.powi(i), UNITS[i as usize])
 }
 
 fn format_number<T: ToString>(num: T) -> String {
@@ -210,4 +210,29 @@ fn format_number<T: ToString>(num: T) -> String {
     let mut s = String::with_capacity(vec.len());
     s.extend(&vec);
     s
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_bytes_to_size() {
+        assert_eq!(bytes_to_size(0), "0.00 B");
+        assert_eq!(bytes_to_size(1), "1.00 B");
+        assert_eq!(bytes_to_size(1023), "1023.00 B");
+        assert_eq!(bytes_to_size(1024), "1.00 KB");
+        assert_eq!(bytes_to_size(1 * 1024 * 1024), "1.00 MB");
+        assert_eq!(bytes_to_size(1 * 1024 * 1024 * 1024 * 1024), "1.00 TB");
+        assert_eq!(bytes_to_size(u64::max_value()), "16.00 EB");
+    }
+
+    #[test]
+    fn test_format_number() {
+        assert_eq!(format_number(0), "0");
+        assert_eq!(format_number(1), "1");
+        assert_eq!(format_number(1000), "1,000");
+        assert_eq!(format_number(999999), "999,999");
+        assert_eq!(format_number(1234567), "1,234,567");
+    }
 }
