@@ -1,3 +1,4 @@
+use crate::color;
 use crate::Detail;
 use std::convert::TryFrom;
 
@@ -6,6 +7,12 @@ pub enum Format {
     Table,
     HTML,
     Markdown,
+}
+
+impl Default for Format {
+    fn default() -> Self {
+        Format::Table
+    }
 }
 
 impl TryFrom<&str> for Format {
@@ -21,59 +28,70 @@ impl TryFrom<&str> for Format {
     }
 }
 
-impl Default for Format {
-    fn default() -> Self {
-        Format::Table
-    }
+#[derive(Default)]
+pub struct Output {
+    pub data: Vec<Detail>,
+    pub color: bool,
+
+    pub total_code: i32,
+    pub total_comment: i32,
+    pub total_blank: i32,
+    pub total_file: i32,
+    pub total_size: u64,
 }
-
-macro_rules! total {
-    ($name: ident, $type: path) => {
-        fn $name(&self) -> $type {
-            let mut n = 0;
-            for item in self.0 {
-                n += item.$name
-            }
-            n
-        }
-    };
-}
-
-struct Total<'a>(&'a Vec<Detail>);
-
-impl<'a> Total<'a> {
-    total!(code, i32);
-    total!(comment, i32);
-    total!(blank, i32);
-    total!(file, i32);
-    total!(size, u64);
-}
-
-pub struct Output(pub Vec<Detail>);
 
 impl Output {
-    pub fn new(data: Vec<Detail>) -> Self {
-        Output(data)
+    pub fn new(data: Vec<Detail>, color: bool) -> Self {
+        let (total_code, total_comment, total_blank, total_file, total_size) = data
+            .iter()
+            .map(|detail| {
+                (
+                    detail.code,
+                    detail.comment,
+                    detail.blank,
+                    detail.file,
+                    detail.size,
+                )
+            })
+            .fold((0, 0, 0, 0, 0), |p, n| {
+                (p.0 + n.0, p.1 + n.1, p.2 + n.2, p.3 + n.3, p.4 + n.4)
+            });
+
+        Self {
+            data,
+            color,
+            total_code,
+            total_comment,
+            total_blank,
+            total_file,
+            total_size,
+        }
     }
 
     pub fn print(self, format: Format) {
+        let mut data = vec![];
         match format {
-            Format::Table => self.table(),
-            Format::HTML => self.html(),
-            Format::Markdown => self.markdown(),
+            Format::Table => self.table(&mut data),
+            Format::HTML => self.html(&mut data),
+            Format::Markdown => self.markdown(&mut data),
         };
+        if self.color {
+            color::print(data.join("\n"));
+        } else {
+            println!("{}", data.join("\n"));
+        }
     }
 
-    fn table(&self) {
-        println!("┌{:─<78}┐", "");
-        println!(
+    fn table(&self, data: &mut Vec<String>) {
+        data.push(format!("┌{:─<78}┐", ""));
+        data.push(format!(
             "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
             "Language", "Code", "Comment", "Blank", "File", "Size"
-        );
-        println!("├{:─<78}┤", "");
+        ));
+        data.push(format!("├{:─<78}┤", ""));
 
-        for item in &self.0 {
-            println!(
+        for item in &self.data {
+            data.push(format!(
                 "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
                 item.language,
                 item.code,
@@ -81,25 +99,26 @@ impl Output {
                 item.blank,
                 item.file,
                 bytes_to_size(item.size)
-            );
+            ));
         }
-        println!("├{:─<78}┤", "");
-        let total = Total(&self.0);
-        println!(
+
+        data.push(format!("├{:─<78}┤", ""));
+
+        data.push(format!(
             "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
             "Total",
-            format_number(total.code()),
-            format_number(total.comment()),
-            format_number(total.blank()),
-            format_number(total.file()),
-            bytes_to_size(total.size())
-        );
-        println!("└{:─<78}┘", "");
+            format_number(self.total_code),
+            format_number(self.total_comment),
+            format_number(self.total_blank),
+            format_number(self.total_file),
+            bytes_to_size(self.total_size)
+        ));
+        data.push(format!("└{:─<78}┘", ""));
     }
 
-    fn html(&self) {
-        println!("<table>");
-        println!(
+    fn html(&self, data: &mut Vec<String>) {
+        data.push("<table>".to_string());
+        data.push(
             "   <thead>
         <tr>
             <th>Language</th>
@@ -110,11 +129,12 @@ impl Output {
             <th>Size</th>
         </tr>
     </thead>"
+                .to_string(),
         );
+        data.push("    <tbody>".to_string());
 
-        println!("    <tbody>");
-        for item in &self.0 {
-            println!(
+        for item in &self.data {
+            data.push(format!(
                 "        <tr>
             <td>{}</td>
             <td>{}</td>
@@ -129,11 +149,11 @@ impl Output {
                 item.blank,
                 item.file,
                 bytes_to_size(item.size)
-            );
+            ));
         }
-        println!("    </tbody>");
-        let total = Total(&self.0);
-        println!(
+        data.push("    </tbody>".to_string());
+
+        data.push(format!(
             "    <tfoot>
         <tr>
             <td>Total</td>
@@ -144,27 +164,26 @@ impl Output {
             <td>{}</td>
         </tr>
     </tfoot>",
-            format_number(total.code()),
-            format_number(total.comment()),
-            format_number(total.blank()),
-            format_number(total.file()),
-            bytes_to_size(total.size())
-        );
-
-        println!("</table>");
+            format_number(self.total_code),
+            format_number(self.total_comment),
+            format_number(self.total_blank),
+            format_number(self.total_file),
+            bytes_to_size(self.total_size)
+        ));
+        data.push("</table>".to_string());
     }
 
-    fn markdown(&self) {
-        println!(
+    fn markdown(&self, data: &mut Vec<String>) {
+        data.push(format!(
             "| {:<14} | {:<12} | {:<12} | {:<12} | {:<12} | {:<14} |",
             "Language", "Code", "Comment", "Blank", "File", "Size"
-        );
-        println!(
-            "| {:-<14} | {:-<12} | {:-<12} | {:-<12} | {:-<12} | {:-<14} |",
+        ));
+        data.push(format!(
+            "| :{:-<13} | {:-<11}: | {:-<11}: | {:-<11}: | {:-<11}: | {:-<13}: |",
             "", "", "", "", "", ""
-        );
-        for item in &self.0 {
-            println!(
+        ));
+        for item in &self.data {
+            data.push(format!(
                 "| {:<14} | {:<12} | {:<12} | {:<12} | {:<12} | {:<14} |",
                 item.language,
                 item.code,
@@ -172,18 +191,18 @@ impl Output {
                 item.blank,
                 item.file,
                 bytes_to_size(item.size)
-            );
+            ));
         }
-        let total = Total(&self.0);
-        println!(
+
+        data.push(format!(
             "| {:<14} | {:<12} | {:<12} | {:<12} | {:<12} | {:<14} |",
             "Total",
-            format_number(total.code()),
-            format_number(total.comment()),
-            format_number(total.blank()),
-            format_number(total.file()),
-            bytes_to_size(total.size())
-        );
+            format_number(self.total_code),
+            format_number(self.total_comment),
+            format_number(self.total_blank),
+            format_number(self.total_file),
+            bytes_to_size(self.total_size)
+        ));
     }
 }
 

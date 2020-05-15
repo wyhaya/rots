@@ -1,6 +1,4 @@
-#[macro_use]
-extern crate lazy_static;
-
+mod color;
 mod config;
 mod output;
 mod parse;
@@ -10,6 +8,7 @@ use bright::Colorful;
 use config::{Config, Language};
 use crossbeam_deque::{Stealer, Worker};
 use glob::Pattern;
+use lazy_static::lazy_static;
 use output::{Format, Output};
 use parse::{parser, Data, Value};
 use std::convert::TryFrom;
@@ -43,11 +42,13 @@ fn main() {
         .cmd("ls", "Print a list of supported languages")
         .cmd("version", "Print version information")
         .cmd("help", "Print help information")
-        .opt("-ext", "Parse file with specified extension")
         .opt("-e", "Exclude files using 'glob' matching")
         .opt("-i", "Include files using 'glob' matching")
         .opt("-o", "Set output format")
-        .opt("-s", "Set sort by");
+        .opt("-s", "Set sort by")
+        .opt("-ext", "Parse file with specified extension\n")
+        .opt("--color", "Print with gradient colors")
+        .opt("--error", "Show error message");
 
     // Default working directory
     let mut work_dir = PathBuf::from(".");
@@ -63,14 +64,6 @@ fn main() {
             }
         }
     }
-
-    let extension = app.value("-ext").map(|values| {
-        if values.is_empty() {
-            exit!("-ext value: [extension] [extension] ..")
-        } else {
-            values.iter().map(|val| val.as_str()).collect::<Vec<&str>>()
-        }
-    });
 
     let exclude = app.value("-e").map(|values| {
         if values.is_empty() {
@@ -113,6 +106,20 @@ fn main() {
         })
         .unwrap_or_default();
 
+    let extension = app.value("-ext").map(|values| {
+        if values.is_empty() {
+            exit!("-ext value: [extension] [extension] ..")
+        } else {
+            values.iter().map(|val| val.as_str()).collect::<Vec<&str>>()
+        }
+    });
+
+    // Whether to output color
+    let print_color = app.value("--color").is_some();
+
+    // Whether the output is wrong
+    let print_error = app.value("--error").is_some();
+
     // Init
     let worker = Worker::new_fifo();
     let cpus = num_cpus::get();
@@ -120,7 +127,10 @@ fn main() {
 
     // Created thread
     for _ in 0..cpus {
-        let fifo = Queue(worker.stealer().clone());
+        let fifo = Queue {
+            stealer: worker.stealer().clone(),
+            print_error,
+        };
         threads.push(thread::spawn(|| fifo.start()));
     }
 
@@ -129,8 +139,10 @@ fn main() {
         let entry = match item {
             Ok(entry) => entry,
             Err(error) => {
-                if let (Some(err), Some(path)) = (error.io_error(), error.path()) {
-                    err!(err.kind(), path);
+                if print_error {
+                    if let (Some(err), Some(path)) = (error.io_error(), error.path()) {
+                        err!(err.kind(), path);
+                    }
                 }
                 return None;
             }
@@ -229,7 +241,7 @@ fn main() {
         Sort::Size => bubble_sort(result, |a, b| a.size > b.size),
     };
 
-    Output::new(data).print(format);
+    Output::new(data, print_color).print(format);
 }
 
 fn print_language_list(data: &[Language]) {
@@ -289,7 +301,7 @@ fn position(s: &str) -> usize {
     LETTER.chars().position(|d| d == first).unwrap_or(0)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Detail {
     language: &'static str,
     blank: i32,
@@ -336,7 +348,10 @@ enum Work<'a> {
     Quit,
 }
 
-struct Queue<'a>(Stealer<Work<'a>>);
+struct Queue<'a> {
+    stealer: Stealer<Work<'a>>,
+    print_error: bool,
+}
 
 impl<'a> Queue<'a> {
     fn start(self) -> Vec<Data> {
@@ -344,7 +359,7 @@ impl<'a> Queue<'a> {
 
         loop {
             // Receive message
-            let work = match self.0.steal().success() {
+            let work = match self.stealer.steal().success() {
                 Some(work) => work,
                 None => continue,
             };
@@ -353,7 +368,11 @@ impl<'a> Queue<'a> {
                 Work::Parse(path, config) => {
                     match parser(path, &config) {
                         Value::Ok(data) => result.push(data),
-                        Value::Err(kind, p) => err!(kind, p),
+                        Value::Err(kind, p) => {
+                            if self.print_error {
+                                err!(kind, p)
+                            }
+                        }
                         Value::Invalid => continue,
                     };
                 }

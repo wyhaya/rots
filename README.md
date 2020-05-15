@@ -43,7 +43,7 @@ cargo install lok
 
 ## Use
 
-Go to your project in the terminal and type lok on the command line
+Go to your project in the terminal and type `lok` on the command line
 
 ```bash
 cd your-project
@@ -78,6 +78,11 @@ lok -o markdown > code.md
 ```bash
 # Sort by: language, code, comment, blank, file, size
 lok -s code
+```    
+
+```bash
+# Output with random gradient colors
+lok --color
 ```    
 
 ## Contributing
