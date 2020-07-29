@@ -1,6 +1,6 @@
 [package]
 name = "lok"
-version = "0.0.9"
+version = "0.1.0"
 edition = "2018"
 
 authors = ["wyhaya <wyhaya@gmail.com>"]
@@ -16,6 +16,11 @@ keywords = [
     "count-lines-of-code",
     "command-line-tool"
 ]
+
+[profile.release]
+lto = true
+codegen-units = 1
+# strip = "symbols"
 
 [dependencies]
 ace = "0.2.0"
