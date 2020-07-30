@@ -29,7 +29,7 @@
 
 * Quickly calculate data
 * Support multiple languages
-* Support multiple outputs, ASCII, HTML, Markdown
+* Support multiple output formats, ASCII, HTML, Markdown
 
 ## Install
 
@@ -54,20 +54,25 @@ lok /root/code
 ```
 
 ```bash
-# If you want to calculate some languages
-lok -ext ts js
-```
-
-```bash
-# If you want to ignore files
+# Exclude all files matched by glob
 lok -e './node_modules/**'
 
-# Ignore all files with the specified extension
+# Exclude all files with the specified extension
 lok -e '**/*.ts' '**/*.js'
 ```
 
 ```bash
-# If you want to output other formats: table, html, markdown
+# Include only files matching glob
+lok -i './src/*.rs'
+```
+
+```bash
+# Only count files containing extensions
+lok --extension js ts jsx tsx
+```
+
+```bash
+# Output other formats: table, html, markdown
 lok -o markdown
 
 # Save to file
@@ -79,12 +84,7 @@ lok -o markdown > code.md
 # Sort by: language, code, comment, blank, file, size
 lok -s code
 ```    
-
-```bash
-# Output with random gradient colors
-lok --color
-```    
-
+ 
 ## Contributing
 
 If you want to add statistics for other languages, please update [config.rs](./src/config.rs)

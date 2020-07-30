@@ -1,6 +1,5 @@
-use crate::color;
 use crate::Detail;
-use std::convert::TryFrom;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub enum Format {
@@ -9,17 +8,10 @@ pub enum Format {
     Markdown,
 }
 
-impl Default for Format {
-    fn default() -> Self {
-        Format::Table
-    }
-}
-
-impl TryFrom<&str> for Format {
-    type Error = ();
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value.to_lowercase().as_str() {
+impl FromStr for Format {
+    type Err = ();
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
             "table" => Ok(Format::Table),
             "html" => Ok(Format::HTML),
             "markdown" => Ok(Format::Markdown),
@@ -31,7 +23,6 @@ impl TryFrom<&str> for Format {
 #[derive(Default)]
 pub struct Output {
     pub data: Vec<Detail>,
-    pub color: bool,
 
     pub total_code: i32,
     pub total_comment: i32,
@@ -41,7 +32,7 @@ pub struct Output {
 }
 
 impl Output {
-    pub fn new(data: Vec<Detail>, color: bool) -> Self {
+    pub fn new(data: Vec<Detail>) -> Self {
         let (total_code, total_comment, total_blank, total_file, total_size) = data
             .iter()
             .map(|detail| {
@@ -59,7 +50,6 @@ impl Output {
 
         Self {
             data,
-            color,
             total_code,
             total_comment,
             total_blank,
@@ -75,11 +65,8 @@ impl Output {
             Format::HTML => self.html(&mut data),
             Format::Markdown => self.markdown(&mut data),
         };
-        if self.color {
-            color::print(data.join("\n"));
-        } else {
-            println!("{}", data.join("\n"));
-        }
+
+        println!("{}", data.join("\n"));
     }
 
     fn table(&self, data: &mut Vec<String>) {

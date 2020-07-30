@@ -1,10 +1,10 @@
 [package]
 name = "lok"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 
 authors = ["wyhaya <wyhaya@gmail.com>"]
-description = "Calculation code information"
+description = "Count the number of codes"
 homepage = "https://github.com/wyhaya/lok"
 repository = "https://github.com/wyhaya/lok.git"
 license = "MIT"
@@ -23,8 +23,8 @@ codegen-units = 1
 # strip = "symbols"
 
 [dependencies]
-ace = "0.2.0"
 bright = "0.4.0"
+clap = "2.33.1"
 crossbeam-deque = "0.7.3"
 glob = "0.3.0"
 lazy_static = "1.4.0"
