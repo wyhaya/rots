@@ -85,7 +85,7 @@ impl Output {
                 item.comment,
                 item.blank,
                 item.file,
-                bytes_to_size(item.size)
+                format_size(item.size)
             ));
         }
 
@@ -98,7 +98,7 @@ impl Output {
             format_number(self.total_comment),
             format_number(self.total_blank),
             format_number(self.total_file),
-            bytes_to_size(self.total_size)
+            format_size(self.total_size)
         ));
         data.push(format!("└{:─<78}┘", ""));
     }
@@ -135,7 +135,7 @@ impl Output {
                 item.comment,
                 item.blank,
                 item.file,
-                bytes_to_size(item.size)
+                format_size(item.size)
             ));
         }
         data.push("    </tbody>".to_string());
@@ -155,7 +155,7 @@ impl Output {
             format_number(self.total_comment),
             format_number(self.total_blank),
             format_number(self.total_file),
-            bytes_to_size(self.total_size)
+            format_size(self.total_size)
         ));
         data.push("</table>".to_string());
     }
@@ -177,7 +177,7 @@ impl Output {
                 item.comment,
                 item.blank,
                 item.file,
-                bytes_to_size(item.size)
+                format_size(item.size)
             ));
         }
 
@@ -188,19 +188,23 @@ impl Output {
             format_number(self.total_comment),
             format_number(self.total_blank),
             format_number(self.total_file),
-            bytes_to_size(self.total_size)
+            format_size(self.total_size)
         ));
     }
 }
 
-fn bytes_to_size(bytes: u64) -> String {
-    const UNITS: [&str; 7] = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
-    if bytes < 1024 {
-        return format!("{}.00 B", bytes);
+fn format_size(n: u64) -> String {
+    const UNITS: [char; 6] = ['K', 'M', 'G', 'T', 'P', 'E'];
+    if n < 1024 {
+        return format!("{}.00 B", n);
     }
-    let bytes = bytes as f64;
+    let bytes = n as f64;
     let i = (bytes.ln() / 1024_f64.ln()) as i32;
-    format!("{:.2} {}", bytes / 1024_f64.powi(i), UNITS[i as usize])
+    format!(
+        "{:.2} {}B",
+        bytes / 1024_f64.powi(i),
+        UNITS[(i - 1) as usize]
+    )
 }
 
 fn format_number<T: ToString>(num: T) -> String {
@@ -223,14 +227,14 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_bytes_to_size() {
-        assert_eq!(bytes_to_size(0), "0.00 B");
-        assert_eq!(bytes_to_size(1), "1.00 B");
-        assert_eq!(bytes_to_size(1023), "1023.00 B");
-        assert_eq!(bytes_to_size(1024), "1.00 KB");
-        assert_eq!(bytes_to_size(1 * 1024 * 1024), "1.00 MB");
-        assert_eq!(bytes_to_size(1 * 1024 * 1024 * 1024 * 1024), "1.00 TB");
-        assert_eq!(bytes_to_size(u64::max_value()), "16.00 EB");
+    fn test_format_size() {
+        assert_eq!(format_size(0), "0.00 B");
+        assert_eq!(format_size(1), "1.00 B");
+        assert_eq!(format_size(1023), "1023.00 B");
+        assert_eq!(format_size(1024), "1.00 KB");
+        assert_eq!(format_size(1 * 1024 * 1024), "1.00 MB");
+        assert_eq!(format_size(1 * 1024 * 1024 * 1024 * 1024), "1.00 TB");
+        assert_eq!(format_size(u64::max_value()), "16.00 EB");
     }
 
     #[test]
