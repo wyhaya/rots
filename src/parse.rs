@@ -1,4 +1,4 @@
-use crate::config::Language;
+use crate::{config::Language, Detail};
 use std::{fs, io::ErrorKind, path::PathBuf};
 
 #[derive(Debug)]
@@ -15,6 +15,19 @@ pub struct Data {
     pub comment: i32,
     pub code: i32,
     pub size: u64,
+}
+
+impl Data {
+    pub fn to_detail(self) -> Detail {
+        Detail {
+            language: self.language,
+            comment: self.comment,
+            blank: self.blank,
+            code: self.code,
+            size: self.size,
+            file: 1,
+        }
+    }
 }
 
 pub fn parser(path: PathBuf, config: &Language) -> Value {

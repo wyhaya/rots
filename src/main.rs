@@ -3,7 +3,7 @@ mod output;
 mod parse;
 
 use bright::Colorful;
-use clap::{value_t_or_exit, App, AppSettings, Arg, SubCommand};
+use clap::{crate_name, crate_version, value_t_or_exit, App, AppSettings, Arg, SubCommand};
 use config::{Language, CONFIG};
 use crossbeam_deque::{Stealer, Worker};
 use glob::Pattern;
@@ -30,9 +30,10 @@ macro_rules! err {
 }
 
 fn main() {
-    let app = App::new(env!("CARGO_PKG_NAME"))
+    let app = App::new(crate_name!())
+        .version(crate_version!())
         .global_setting(AppSettings::ColoredHelp)
-        .version(env!("CARGO_PKG_VERSION"))
+        .setting(AppSettings::VersionlessSubcommands)
         .subcommand(SubCommand::with_name("ls").about("Print a list of supported languages"))
         .arg(Arg::with_name("directory").help("Calculate the specified directory"))
         .arg(
@@ -92,11 +93,7 @@ fn main() {
         return print_language_list();
     }
 
-    let dir = match app.values_of("directory") {
-        Some(targets) => targets.collect::<Vec<&str>>()[0],
-        None => ".",
-    };
-
+    let dir = app.value_of("directory").unwrap_or(".");
     let work_dir = PathBuf::from(dir);
 
     // Whether the output is wrong
@@ -118,21 +115,22 @@ fn main() {
         .values_of("extension")
         .map(|values| values.collect::<Vec<&str>>());
 
-    // Init
     let worker = Worker::new_fifo();
     let cpus = num_cpus::get();
     let mut threads = Vec::with_capacity(cpus);
 
     // Created thread
     for _ in 0..cpus {
-        let fifo = Queue {
-            stealer: worker.stealer().clone(),
-            print_error,
-        };
-        threads.push(thread::spawn(|| fifo.start()));
+        let stealer = worker.stealer().clone();
+        threads.push(thread::spawn(move || {
+            let task = Task {
+                stealer,
+                print_error,
+            };
+            task.start()
+        }));
     }
 
-    // Get all files
     let files = WalkDir::new(work_dir).into_iter().filter_map(|item| {
         let entry = match item {
             Ok(entry) => entry,
@@ -195,48 +193,33 @@ fn main() {
         worker.push(Work::Quit);
     }
 
-    // Merge data
-    let mut result = Vec::new();
+    // Summary of all data
+    let mut total = Vec::new();
 
     for thread in threads {
-        let data = thread.join().unwrap_or_else(|err| {
+        let task_data = thread.join().unwrap_or_else(|err| {
             exit!("Thread exits abnormally\n{:#?}", err);
         });
 
-        for d in data {
-            let position = result
-                .iter()
-                .position(|item: &Detail| item.language == d.language);
+        for data in task_data {
+            let find = total
+                .iter_mut()
+                .find(|item: &&mut Detail| item.language == data.language);
 
-            match position {
-                Some(i) => {
-                    result[i].comment += d.comment;
-                    result[i].blank += d.blank;
-                    result[i].code += d.code;
-                    result[i].size += d.size;
-                    result[i].file += 1;
-                }
-                None => {
-                    result.push(Detail {
-                        language: d.language,
-                        comment: d.comment,
-                        blank: d.blank,
-                        code: d.code,
-                        size: d.size,
-                        file: 1,
-                    });
-                }
+            match find {
+                Some(detail) => detail.add(data),
+                None => total.push(data.to_detail()),
             }
         }
     }
 
     let data = match sort {
-        Sort::Language => bubble_sort(result, |a, b| position(a.language) > position(b.language)),
-        Sort::Code => bubble_sort(result, |a, b| a.code > b.code),
-        Sort::Comment => bubble_sort(result, |a, b| a.comment > b.comment),
-        Sort::Blank => bubble_sort(result, |a, b| a.blank > b.blank),
-        Sort::File => bubble_sort(result, |a, b| a.file > b.file),
-        Sort::Size => bubble_sort(result, |a, b| a.size > b.size),
+        Sort::Language => bubble_sort(total, |a, b| position(a.language) > position(b.language)),
+        Sort::Code => bubble_sort(total, |a, b| a.code > b.code),
+        Sort::Comment => bubble_sort(total, |a, b| a.comment > b.comment),
+        Sort::Blank => bubble_sort(total, |a, b| a.blank > b.blank),
+        Sort::File => bubble_sort(total, |a, b| a.file > b.file),
+        Sort::Size => bubble_sort(total, |a, b| a.size > b.size),
     };
 
     Output::new(data).print(format);
@@ -310,6 +293,16 @@ pub struct Detail {
     file: i32,
 }
 
+impl Detail {
+    fn add(&mut self, data: Data) {
+        self.comment += data.comment;
+        self.blank += data.blank;
+        self.code += data.code;
+        self.size += data.size;
+        self.file += 1;
+    }
+}
+
 #[derive(Debug)]
 enum Sort {
     Language,
@@ -346,12 +339,12 @@ enum Work<'a> {
     Quit,
 }
 
-struct Queue<'a> {
+struct Task<'a> {
     stealer: Stealer<Work<'a>>,
     print_error: bool,
 }
 
-impl<'a> Queue<'a> {
+impl<'a> Task<'a> {
     fn start(self) -> Vec<Data> {
         let mut result = Vec::new();
 
