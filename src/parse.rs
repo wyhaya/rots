@@ -48,7 +48,7 @@ pub fn parser(path: PathBuf, config: &Language) -> Value {
         }
 
         // Match multiple lines of comments
-        for (start, end) in &config.multi {
+        for (start, end) in config.multi {
             if let Some(d) = in_comment {
                 if d != (start, end) {
                     continue;
@@ -89,7 +89,7 @@ pub fn parser(path: PathBuf, config: &Language) -> Value {
         }
 
         //  Match single line comments
-        for single in &config.single {
+        for single in config.single {
             if line.starts_with(single) {
                 comment += 1;
                 continue 'line;

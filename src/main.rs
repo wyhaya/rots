@@ -4,10 +4,9 @@ mod parse;
 
 use bright::Colorful;
 use clap::{value_t_or_exit, App, AppSettings, Arg, SubCommand};
-use config::{Config, Language};
+use config::{Language, CONFIG};
 use crossbeam_deque::{Stealer, Worker};
 use glob::Pattern;
-use lazy_static::lazy_static;
 use output::{Format, Output};
 use parse::{parser, Data, Value};
 use std::str::FromStr;
@@ -28,10 +27,6 @@ macro_rules! err {
     ($kind: expr, $path: expr) => {
         eprintln!("{} {:?} {:?}", "error:".yellow(), $kind, $path);
     };
-}
-
-lazy_static! {
-    static ref CONFIG: Config = Config::new();
 }
 
 fn main() {
@@ -94,7 +89,7 @@ fn main() {
         .get_matches();
 
     if app.is_present("ls") {
-        return print_language_list(&CONFIG.data);
+        return print_language_list();
     }
 
     let dir = match app.values_of("directory") {
@@ -247,13 +242,14 @@ fn main() {
     Output::new(data).print(format);
 }
 
-fn print_language_list(data: &[Language]) {
-    let n = data
+fn print_language_list() {
+    let n = CONFIG
+        .all_language()
         .iter()
         .map(|language| language.name.len())
         .fold(0, |a, b| a.max(b));
 
-    for language in data {
+    for language in CONFIG.all_language() {
         let ext = language
             .extension
             .iter()
