@@ -9,8 +9,7 @@ use crossbeam_deque::{Stealer, Worker};
 use glob::Pattern;
 use output::{Format, Output};
 use parse::{parser, Data, Value};
-use std::str::FromStr;
-use std::{path::PathBuf, thread};
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 macro_rules! exit {
@@ -122,7 +121,7 @@ fn main() {
     // Created thread
     for _ in 0..cpus {
         let stealer = worker.stealer().clone();
-        threads.push(thread::spawn(move || {
+        threads.push(std::thread::spawn(move || {
             let task = Task {
                 stealer,
                 print_error,
@@ -208,7 +207,7 @@ fn main() {
 
             match find {
                 Some(detail) => detail.add(data),
-                None => total.push(data.to_detail()),
+                None => total.push(data.into_detail()),
             }
         }
     }
@@ -247,7 +246,7 @@ fn print_language_list() {
 // ./src src => ./src ./src
 // /src  src => /src   /src
 // src   src => src    src
-fn force_to_glob(path: &PathBuf, values: Vec<&str>) -> Vec<Pattern> {
+fn force_to_glob(path: &Path, values: Vec<&str>) -> Vec<Pattern> {
     values
         .iter()
         .map(|s| {
@@ -313,7 +312,7 @@ enum Sort {
     Size,
 }
 
-impl FromStr for Sort {
+impl std::str::FromStr for Sort {
     type Err = ();
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {

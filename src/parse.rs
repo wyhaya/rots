@@ -18,7 +18,7 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn to_detail(self) -> Detail {
+    pub fn into_detail(self) -> Detail {
         Detail {
             language: self.language,
             comment: self.comment,
