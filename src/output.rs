@@ -1,10 +1,11 @@
 use crate::Detail;
+use std::fmt::Display;
 use std::str::FromStr;
 
 #[derive(Debug)]
 pub enum Format {
     Table,
-    HTML,
+    Html,
     Markdown,
 }
 
@@ -13,7 +14,7 @@ impl FromStr for Format {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "table" => Ok(Format::Table),
-            "html" => Ok(Format::HTML),
+            "html" => Ok(Format::Html),
             "markdown" => Ok(Format::Markdown),
             _ => Err(()),
         }
@@ -23,7 +24,6 @@ impl FromStr for Format {
 #[derive(Default)]
 pub struct Output {
     pub data: Vec<Detail>,
-
     pub total_code: i32,
     pub total_comment: i32,
     pub total_blank: i32,
@@ -62,7 +62,7 @@ impl Output {
         let mut data = vec![];
         match format {
             Format::Table => self.table(&mut data),
-            Format::HTML => self.html(&mut data),
+            Format::Html => self.html(&mut data),
             Format::Markdown => self.markdown(&mut data),
         };
 
@@ -207,19 +207,16 @@ fn format_size(n: u64) -> String {
     )
 }
 
-fn format_number<T: ToString>(num: T) -> String {
-    let text = num.to_string();
-    let mut vec = Vec::new();
-    for (i, ch) in text.chars().rev().enumerate() {
-        if i != 0 && i % 3 == 0 {
-            vec.push(',');
+fn format_number<T: Display>(num: T) -> String {
+    let num = format!("{}", num);
+    let mut rst = String::new();
+    for (i, ch) in num.chars().enumerate() {
+        rst.push(ch);
+        if i != num.len() - 1 && (num.len() - 1 - i) % 3 == 0 {
+            rst.push(',');
         }
-        vec.push(ch);
     }
-    vec.reverse();
-    let mut s = String::with_capacity(vec.len());
-    s.extend(&vec);
-    s
+    rst
 }
 
 #[cfg(test)]

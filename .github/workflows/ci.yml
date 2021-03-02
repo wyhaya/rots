@@ -82,6 +82,7 @@ jobs:
         run: |
           cd ./target/${{ matrix.job.target }}/release/
           Compress-Archive -CompressionLevel Optimal -Force -Path ${{ env.NAME }}.exe -DestinationPath ${{ env.NAME }}-${{ steps.tag.outputs.version }}-${{ matrix.job.target }}.zip
+
       - name: GitHub release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')

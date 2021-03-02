@@ -1,20 +1,21 @@
+mod cli;
 mod config;
 mod output;
 mod parse;
 
-use bright::Colorful;
-use clap::{crate_name, crate_version, value_t_or_exit, App, AppSettings, Arg, SubCommand};
+use cli::Options;
 use config::{Language, CONFIG};
 use crossbeam_deque::{Stealer, Worker};
-use glob::Pattern;
-use output::{Format, Output};
+use output::Output;
 use parse::{parser, Data, Value};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use walkdir::WalkDir;
 
+#[macro_export]
 macro_rules! exit {
     ($($arg:tt)*) => {
        {
+            use bright::Colorful;
             eprint!("{} ", "error:".red().bold());
             eprintln!($($arg)*);
             std::process::exit(1)
@@ -23,96 +24,22 @@ macro_rules! exit {
 }
 
 macro_rules! err {
-    ($kind: expr, $path: expr) => {
+    ($kind: expr, $path: expr) => {{
+        use bright::Colorful;
         eprintln!("{} {:?} {:?}", "error:".yellow(), $kind, $path);
-    };
+    }};
 }
 
 fn main() {
-    let app = App::new(crate_name!())
-        .version(crate_version!())
-        .global_setting(AppSettings::ColoredHelp)
-        .setting(AppSettings::VersionlessSubcommands)
-        .subcommand(SubCommand::with_name("ls").about("Print a list of supported languages"))
-        .arg(Arg::with_name("directory").help("Calculate the specified directory"))
-        .arg(
-            Arg::with_name("error")
-                .long("error")
-                .help("Show error message"),
-        )
-        .arg(
-            Arg::with_name("exclude")
-                .short("e")
-                .long("exclude")
-                .value_name("GLOB")
-                .multiple(true)
-                .help("Exclude files using 'glob' matching"),
-        )
-        .arg(
-            Arg::with_name("include")
-                .short("i")
-                .long("include")
-                .value_name("GLOB")
-                .multiple(true)
-                .help("Include files using 'glob' matching"),
-        )
-        .arg(
-            Arg::with_name("output")
-                .short("o")
-                .long("output")
-                .value_name("OUTPUT")
-                .possible_values(&["table", "html", "markdown"])
-                .default_value("table")
-                .max_values(1)
-                .hide_default_value(true)
-                .help("Specify output format"),
-        )
-        .arg(
-            Arg::with_name("sort")
-                .short("s")
-                .long("sort")
-                .value_name("SORT")
-                .possible_values(&["language", "code", "comment", "blank", "file", "size"])
-                .default_value("language")
-                .max_values(1)
-                .hide_default_value(true)
-                .help("Specify the column sort by"),
-        )
-        .arg(
-            Arg::with_name("extension")
-                .long("extension")
-                .multiple(true)
-                .value_name("EXTENSION")
-                .display_order(1000)
-                .help("Parse file with specified extension"),
-        )
-        .get_matches();
-
-    if app.is_present("ls") {
-        return print_language_list();
-    }
-
-    let dir = app.value_of("directory").unwrap_or(".");
-    let work_dir = PathBuf::from(dir);
-
-    // Whether the output is wrong
-    let print_error = app.is_present("error");
-
-    let exclude = app
-        .values_of("exclude")
-        .map(|values| force_to_glob(&work_dir, values.collect()));
-
-    let include = app
-        .values_of("include")
-        .map(|values| force_to_glob(&work_dir, values.collect()));
-
-    let format = value_t_or_exit!(app, "output", Format);
-
-    let sort = value_t_or_exit!(app, "sort", Sort);
-
-    let extension = app
-        .values_of("extension")
-        .map(|values| values.collect::<Vec<&str>>());
+    let Options {
+        work_dir,
+        print_error,
+        exclude,
+        include,
+        format,
+        sort,
+        extension,
+    } = cli::parse();
 
     let worker = Worker::new_fifo();
     let cpus = num_cpus::get();
@@ -173,7 +100,7 @@ fn main() {
 
         // This extension is not included in config
         if let Some(extension) = &extension {
-            if !extension.contains(&ext) {
+            if !extension.iter().any(|s| s == ext) {
                 return None;
             }
         }
@@ -224,7 +151,7 @@ fn main() {
     Output::new(data).print(format);
 }
 
-fn print_language_list() {
+pub fn print_language_list() {
     let n = CONFIG
         .all_language()
         .iter()
@@ -240,29 +167,6 @@ fn print_language_list() {
             .join(" ");
         println!("{:name$}    {}", language.name, ext, name = n);
     }
-}
-
-// Translate to the same path
-// ./src src => ./src ./src
-// /src  src => /src   /src
-// src   src => src    src
-fn force_to_glob(path: &Path, values: Vec<&str>) -> Vec<Pattern> {
-    values
-        .iter()
-        .map(|s| {
-            if path.starts_with(".") && !s.starts_with("./") {
-                format!("./{}", s)
-            } else if path.starts_with("/") && !s.starts_with('/') {
-                format!("/{}", s)
-            } else {
-                (*s).to_string()
-            }
-        })
-        .map(|s| {
-            Pattern::new(s.as_str())
-                .unwrap_or_else(|err| exit!("Cannot parse '{}' to glob matcher\n{:#?}", s, err))
-        })
-        .collect::<Vec<Pattern>>()
 }
 
 fn bubble_sort<T>(mut vec: Vec<T>, call: fn(&T, &T) -> bool) -> Vec<T> {
@@ -303,7 +207,7 @@ impl Detail {
 }
 
 #[derive(Debug)]
-enum Sort {
+pub enum Sort {
     Language,
     Code,
     Comment,
