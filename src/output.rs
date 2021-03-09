@@ -70,16 +70,16 @@ impl Output {
     }
 
     fn table(&self, data: &mut Vec<String>) {
-        data.push(format!("┌{:─<78}┐", ""));
+        data.push(format!("╭{:─<78}╮", ""));
         data.push(format!(
-            "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
+            "│ {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} │",
             "Language", "Code", "Comment", "Blank", "File", "Size"
         ));
         data.push(format!("├{:─<78}┤", ""));
 
         for item in &self.data {
             data.push(format!(
-                "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
+                "│ {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} │",
                 item.language,
                 item.code,
                 item.comment,
@@ -92,7 +92,7 @@ impl Output {
         data.push(format!("├{:─<78}┤", ""));
 
         data.push(format!(
-            "| {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} |",
+            "│ {:<14}{:>12}{:>12}{:>12}{:>12}{:>14} │",
             "Total",
             format_number(self.total_code),
             format_number(self.total_comment),
@@ -100,7 +100,7 @@ impl Output {
             format_number(self.total_file),
             format_size(self.total_size)
         ));
-        data.push(format!("└{:─<78}┘", ""));
+        data.push(format!("╰{:─<78}╯", ""));
     }
 
     fn html(&self, data: &mut Vec<String>) {
@@ -196,7 +196,7 @@ impl Output {
 fn format_size(n: u64) -> String {
     const UNITS: [char; 6] = ['K', 'M', 'G', 'T', 'P', 'E'];
     if n < 1024 {
-        return format!("{}.00 B", n);
+        return format!("{} B ", n);
     }
     let bytes = n as f64;
     let i = (bytes.ln() / 1024_f64.ln()) as i32;
