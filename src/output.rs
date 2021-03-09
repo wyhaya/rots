@@ -225,9 +225,9 @@ mod test {
 
     #[test]
     fn test_format_size() {
-        assert_eq!(format_size(0), "0.00 B");
-        assert_eq!(format_size(1), "1.00 B");
-        assert_eq!(format_size(1023), "1023.00 B");
+        assert_eq!(format_size(0), "0 B ");
+        assert_eq!(format_size(1), "1 B ");
+        assert_eq!(format_size(1023), "1023 B ");
         assert_eq!(format_size(1024), "1.00 KB");
         assert_eq!(format_size(1 * 1024 * 1024), "1.00 MB");
         assert_eq!(format_size(1 * 1024 * 1024 * 1024 * 1024), "1.00 TB");
